@@ -255,6 +255,9 @@ struct SocialView: View {
 struct SettingsView: View {
     @Environment(FeatureFlagService.self) var service
     
+    @State private var isFetching = false
+    @State private var refreshError: String?
+    
     var body: some View {
         NavigationStack {
             List {
@@ -269,13 +272,14 @@ struct SettingsView: View {
                 Section("Remote Config Simulation") {
                     Button {
                         isFetching = true
-                        if let remoteProvider = service.provider(ofType: MockRemoteProvider.self) {
-                            remoteProvider.fetchRemoteConfig {
-                                service.triggerUpdate()
-                                isFetching = false
-                            }
-                        } else {
+                        Task {
+                            let failures = await service.refresh()
                             isFetching = false
+                            if failures > 0 {
+                                refreshError = "\(failures) provider(s) failed to refresh"
+                            } else {
+                                refreshError = nil
+                            }
                         }
                     } label: {
                         HStack {
@@ -288,6 +292,12 @@ struct SettingsView: View {
                     }
                     .disabled(isFetching)
                     
+                    if let refreshError {
+                        Text(refreshError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    
                     Text("Fetching will:\n• Disable 'New Home UI'\n• Enable 'Social Tab'\n• Change API URL")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -296,6 +306,4 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
     }
-    
-    @State private var isFetching = false
 }

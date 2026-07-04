@@ -3,7 +3,9 @@ import TGFeatureFlag
 
 /// A mock provider simulating a remote configuration service (e.g. Firebase Remote Config).
 /// It allows simulating network fetches and updating feature flag values dynamically.
-public final class MockRemoteProvider: FeatureFlagProvider, @unchecked Sendable {
+///
+/// Implements `AsyncFeatureFlagProvider` for async refresh via `FeatureFlagService.refresh()`.
+public final class MockRemoteProvider: AsyncFeatureFlagProvider, @unchecked Sendable {
     public let name: String = "Remote Config"
     
     // Thread-safe storage for fetched flags
@@ -18,36 +20,30 @@ public final class MockRemoteProvider: FeatureFlagProvider, @unchecked Sendable 
         }
     }
     
-    /// Simulates fetching configuration from a remote server.
-    /// - Parameters:
-    ///   - completion: Called when the fetch is complete.
-    public func fetchRemoteConfig(completion: @escaping () -> Void) {
+    /// Async fetch implementation for `FeatureFlagService.refresh()`.
+    public func fetchValues() async throws {
         // Simulate network delay
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self = self else { return }
-            
-            // Simulated remote values
-            let newConfig: [String: Any] = [
-                // Disable new home design remotely (overrides local default 'true')
-                "feature_new_home": true,
-                
-                // Enable social tab remotely (overrides local default 'false')
-                "feature_social_tab": true,
-                
-                // Change API URL remotely
-                "config_api_base_url": "https://api.staging.remote.com",
-                
-                // Keep detailed navigation enabled
-                "feature_detailed_navigation": true
-            ]
-            
-            self.queue.async(flags: .barrier) {
-                self.flags = newConfig
-                
-                DispatchQueue.main.async {
-                    completion()
-                }
-            }
+        try await Task.sleep(for: .seconds(1.5))
+        
+        // Simulated remote values
+        let newConfig: [String: Any] = [
+            "feature_new_home": true,
+            "feature_social_tab": true,
+            "config_api_base_url": "https://api.staging.remote.com",
+            "feature_detailed_navigation": true
+        ]
+        
+        queue.async(flags: .barrier) {
+            self.flags = newConfig
+        }
+    }
+    
+    /// Legacy callback-based fetch for backward compatibility.
+    /// - Parameter completion: Called when the fetch is complete.
+    public func fetchRemoteConfig(completion: @escaping () -> Void) {
+        Task {
+            try? await fetchValues()
+            await MainActor.run { completion() }
         }
     }
 }
