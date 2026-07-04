@@ -1,7 +1,9 @@
 import SwiftUI
 import TGFeatureFlag
 
-// Define Feature Flags
+// MARK: - Feature Flags
+
+/// Standard (ungrouped) feature flags used across the demo.
 enum DemoFeature: String, FeatureFlagKey, CaseIterable {
     case newHomeDesign = "feature_new_home"
     case socialTab = "feature_social_tab"
@@ -32,36 +34,94 @@ enum DemoFeature: String, FeatureFlagKey, CaseIterable {
     }
 }
 
+// MARK: - Grouped Feature Flags (FeatureFlagGroup Demo)
+
+/// Demonstrates `GroupedFeatureFlag` — keys are resolved with a namespace prefix
+/// (e.g. `"checkout.v2Flow"` instead of just `"v2Flow"`).
+enum CheckoutFeature: String, FeatureFlagKey, GroupedFeatureFlag, CaseIterable {
+    case v2Flow = "v2Flow"
+    case newPayment = "newPayment"
+    case expressShipping = "expressShipping"
+    
+    var defaultValue: Any { false }
+    
+    var description: String {
+        switch self {
+        case .v2Flow: return "Checkout V2 Flow"
+        case .newPayment: return "New Payment UI"
+        case .expressShipping: return "Express Shipping"
+        }
+    }
+    
+    static var group: FeatureFlagGroup {
+        FeatureFlagGroup(prefix: "checkout")
+    }
+}
+
+// MARK: - Demo Logger (FeatureFlagLogger Demo)
+
+/// A simple in-memory logger that records flag resolution events for display in the UI.
+@Observable
+final class DemoLogger: FeatureFlagLogger, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _entries: [LogEntry] = []
+    
+    struct LogEntry: Identifiable, Sendable {
+        let id = UUID()
+        let flag: String
+        let provider: String
+        let value: String
+        let timestamp: Date
+    }
+    
+    var entries: [LogEntry] {
+        lock.withLock { _entries }
+    }
+    
+    func log(flag: String, resolvedBy provider: String?, value: Any?) {
+        let entry = LogEntry(
+            flag: flag,
+            provider: provider ?? "default",
+            value: value.map { "\($0)" } ?? "nil",
+            timestamp: Date()
+        )
+        lock.withLock {
+            _entries.insert(entry, at: 0)
+            if _entries.count > 50 { _entries.removeLast() }
+        }
+    }
+}
+
+// MARK: - App Entry Point
+
 @main
 struct TGFeatureFlagDemoApp: App {
     @State private var service: FeatureFlagService
+    let demoLogger = DemoLogger()
     
     init() {
         let s = FeatureFlagService()
         
+        // Attach diagnostic logger
+        s.setLogger(demoLogger)
+        
         // 1. Debug Provider (Highest Priority) - For runtime toggling
         s.register(provider: DebugProvider(), priority: .highest)
         
-        // 2. Mock Remote Provider (Medium Priority) - Simulating Server Side Config
-        // This overrides UserDefaults and Local defaults in this demo setup logic,
-        // but typically you might want User Settings > Remote.
-        // For this demo to show "Remote overrides fixed in app", we place it here.
-        // Since we are using .lowest (append), we need to add them in order of precedence if we want to control order precisely.
-        // Current order in array will be: [Debug] -> append(Remote) -> [Debug, Remote] -> append(UserDefaults) ...
-        // Wait, 'lowest' appends to the END.
-        // So:
-        // 1. Debug (inserted at 0) -> [Debug]
-        // 2. Remote (appended) -> [Debug, Remote]
-        // 3. UserDefaults (appended) -> [Debug, Remote, UserDefaults]
-        // 4. Local (appended) -> [Debug, Remote, UserDefaults, Local]
-        // Priority Chain: Debug > Remote > UserDefaults > Local
+        // 2. Rollout Provider (Custom Priority 80) - Percentage-based rollout
+        let rollout = RolloutProvider(userId: "demo-user-001")
+        rollout.setRollout(for: CheckoutFeature.v2Flow, percentage: 75)
+        rollout.setRollout(for: CheckoutFeature.newPayment, percentage: 50)
+        rollout.setRollout(for: CheckoutFeature.expressShipping, percentage: 100)
+        s.register(provider: rollout, priority: .custom(80))
         
-        s.register(provider: MockRemoteProvider(), priority: .lowest)
+        // 3. Mock Remote Provider (Medium Priority) - Simulating Server Config
+        s.register(provider: MockRemoteProvider(), priority: .custom(60))
         
-        // 3. UserDefaults (Lower Priority)
-        s.register(provider: UserDefaultsProvider(), priority: .lowest)
+        // 4. UserDefaults (Lower Priority)
+        s.register(provider: UserDefaultsProvider(), priority: .custom(40))
         
-        // 4. Local Default (Lowest Priority) - Fallback
+        // 5. Local Default (Lowest Priority) - Fallback
         s.register(provider: LocalProvider(enabledFeatures: [DemoFeature.newHomeDesign]), priority: .lowest)
         
         _service = State(initialValue: s)
@@ -71,6 +131,7 @@ struct TGFeatureFlagDemoApp: App {
         WindowGroup {
             ContentView()
                 .featureFlagService(service)
+                .environment(demoLogger)
         }
     }
 }

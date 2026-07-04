@@ -25,6 +25,12 @@ struct ContentView: View {
                     Label("Product", systemImage: "cart")
                 }
             
+            // New: Advanced features demo (Rollout, Groups, Logger)
+            AdvancedView()
+                .tabItem {
+                    Label("Advanced", systemImage: "wand.and.stars")
+                }
+            
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
@@ -240,6 +246,161 @@ struct SimpleSpecView: View {
         // Since parent hides navbar, this will be full screen content effectively.
     }
 }
+
+// MARK: - Advanced Features Demo
+
+struct AdvancedView: View {
+    @Environment(FeatureFlagService.self) var service
+    @Environment(DemoLogger.self) var logger
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                // --- RolloutProvider Demo ---
+                Section {
+                    RolloutRow(
+                        title: "Checkout V2 Flow",
+                        feature: CheckoutFeature.v2Flow,
+                        percentage: 75
+                    )
+                    RolloutRow(
+                        title: "New Payment UI",
+                        feature: CheckoutFeature.newPayment,
+                        percentage: 50
+                    )
+                    RolloutRow(
+                        title: "Express Shipping",
+                        feature: CheckoutFeature.expressShipping,
+                        percentage: 100
+                    )
+                } header: {
+                    Label("RolloutProvider", systemImage: "chart.pie.fill")
+                } footer: {
+                    Text("Deterministic hash-based rollout for user \"demo-user-001\". Results vary per user ID.")
+                        .font(.caption)
+                }
+                
+                // --- FeatureFlagGroup Demo ---
+                Section {
+                    ForEach(Array(CheckoutFeature.allCases), id: \.rawValue) { feature in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feature.description)
+                                    .font(.body)
+                                Text("Key: \"\(feature.qualifiedKey)\"")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .monospaced()
+                            }
+                            Spacer()
+                            Image(systemName: service.isEnabled(feature) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(service.isEnabled(feature) ? .green : .gray)
+                        }
+                    }
+                } header: {
+                    Label("FeatureFlagGroup", systemImage: "folder.fill")
+                } footer: {
+                    Text("Grouped flags use qualified keys with \"checkout.\" prefix for provider lookups.")
+                        .font(.caption)
+                }
+                
+                // --- FeatureFlagLogger Demo ---
+                Section {
+                    if logger.entries.isEmpty {
+                        Text("No resolution events yet. Navigate around to generate logs.")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                    } else {
+                        ForEach(logger.entries.prefix(10)) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(entry.flag)
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                        .monospaced()
+                                    Spacer()
+                                    Text(entry.value)
+                                        .font(.caption)
+                                        .foregroundStyle(.blue)
+                                        .monospaced()
+                                }
+                                Text("via \(entry.provider)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Label("FeatureFlagLogger", systemImage: "text.magnifyingglass")
+                } footer: {
+                    Text("Shows the last 10 flag resolution events recorded by the DemoLogger.")
+                        .font(.caption)
+                }
+                
+                // --- Priority Chain Visualization ---
+                Section {
+                    PriorityRow(name: "Debug", priority: "highest", color: .red)
+                    PriorityRow(name: "Rollout", priority: "custom(80)", color: .orange)
+                    PriorityRow(name: "Remote Config", priority: "custom(60)", color: .yellow)
+                    PriorityRow(name: "UserDefaults", priority: "custom(40)", color: .blue)
+                    PriorityRow(name: "Local Default", priority: "lowest", color: .gray)
+                } header: {
+                    Label("Priority Chain", systemImage: "arrow.up.arrow.down.circle.fill")
+                }
+            }
+            .navigationTitle("Advanced")
+        }
+    }
+}
+
+struct RolloutRow: View {
+    @Environment(FeatureFlagService.self) var service
+    let title: String
+    let feature: CheckoutFeature
+    let percentage: Int
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text("\(percentage)% rollout")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(service.isEnabled(feature) ? "IN" : "OUT")
+                .font(.caption)
+                .fontWeight(.bold)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(service.isEnabled(feature) ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
+                .cornerRadius(6)
+        }
+    }
+}
+
+struct PriorityRow: View {
+    let name: String
+    let priority: String
+    let color: Color
+    
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            Text(name)
+                .font(.body)
+            Spacer()
+            Text(priority)
+                .font(.caption)
+                .monospaced()
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Social View
 
 struct SocialView: View {
     var body: some View {
