@@ -1,5 +1,7 @@
 # TGFeatureFlag
 
+[![CI](https://github.com/tangzzz-fan/TGFeatureFlag/actions/workflows/ci.yml/badge.svg)](https://github.com/tangzzz-fan/TGFeatureFlag/actions/workflows/ci.yml)
+
 A powerful, flexible, and type-safe feature flag framework for Apple platforms, built with Swift 6 and the Observation framework.
 
 TGFeatureFlag decouples feature releases from code deployment, enabling safer releases, A/B testing, percentage-based rollouts, and dynamic configuration management.
@@ -34,6 +36,10 @@ dependencies: [
 ```
 
 Or in Xcode: **File → Add Package Dependencies**, then enter the repository URL.
+
+## Continuous Integration
+
+GitHub Actions runs `swift build` and `swift test` automatically for pushes and pull requests targeting `main`. The workflow file lives at `.github/workflows/ci.yml`.
 
 ## Usage
 
