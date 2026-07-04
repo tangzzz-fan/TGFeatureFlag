@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: example_app
+title: TGFeatureFlag SwiftUI Demo App
+scope:
+    - Example/TGFeatureFlagDemo/
+source_files: []
+depends_on: []
+related_to:
+    - path: providers
+    - path: swiftui_integration

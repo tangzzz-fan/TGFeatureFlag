@@ -1,0 +1,1 @@
+SwiftPM with swift-tools-version 6.0, targeting iOS 17+ and macOS 14+, built on Swift Concurrency's Observation framework (`@Observable`).

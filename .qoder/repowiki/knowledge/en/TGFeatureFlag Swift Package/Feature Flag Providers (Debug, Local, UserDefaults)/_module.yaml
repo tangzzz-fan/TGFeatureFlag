@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: providers
+title: Feature Flag Providers (Debug, Local, UserDefaults)
+scope:
+    - Sources/TGFeatureFlag/Providers/
+source_files: []
+depends_on: []
+related_to:
+    - path: core
+    - path: example_app

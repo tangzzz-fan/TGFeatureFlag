@@ -1,0 +1,6 @@
+Three small SwiftUI entry points built on top of the core `FeatureFlagService`:
+- `View+FeatureFlag.swift` — a single public extension that injects `FeatureFlagService` into the SwiftUI environment via `.environment`, intended to be called once at the app root (e.g. inside `WindowGroup`).
+- `FeatureGate.swift` — a generic `View` (`FeatureGate<F: FeatureFlagKey, Content, Fallback>`) that reads the injected service and renders `content` when enabled or `fallback` otherwise; a constrained extension provides a convenience init with `Fallback == EmptyView`.
+- `FeatureFlagDebugView.swift` — a `CaseIterable`-constrained debug list that enumerates all flags, shows per-flag editors (`BoolEditor`, `StringEditor`) backed by a `DebugProvider` retrieved from the service, and exposes a "Reset All Overrides" button that calls `provider.reset()` followed by `service.triggerUpdate()` to propagate changes.
+
+Dependency direction is one-way: this module depends only on the core `FeatureFlagService`/`FeatureFlagKey`/`DebugProvider` protocol surface and never imports the rest of TGFeatureFlag internals. The debug view is gated behind `F: CaseIterable` so it can iterate every flag without hardcoding names.

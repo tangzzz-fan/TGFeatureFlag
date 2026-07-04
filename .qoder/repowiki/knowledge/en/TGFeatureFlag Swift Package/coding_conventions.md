@@ -1,0 +1,2 @@
+- Feature flags are declared as `String`-backed enums conforming to `FeatureFlagKey`, with each case carrying a stable string key and a typed `defaultValue`.
+- Providers implement the `FeatureFlagProvider` protocol and are registered with the `FeatureFlagService` in explicit priority order rather than by name.

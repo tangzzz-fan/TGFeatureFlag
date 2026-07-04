@@ -1,0 +1,68 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+nodes_managed: true
+exported_at: "2026-07-04T14:58:00Z"
+modules:
+    "":
+        dir_name: TGFeatureFlag Swift Package
+        title: TGFeatureFlag Swift Package
+        scope:
+            - README.md
+            - .gitignore
+            - CHANGELOG.md
+            - DesignInfo.md
+            - Package.swift
+        source_files: []
+        children:
+            - core
+            - example_app
+            - providers
+            - swiftui_integration
+        depends_on: []
+        related_to: []
+    core:
+        dir_name: Feature Flag Core Abstractions
+        title: Feature Flag Core Abstractions
+        scope:
+            - Sources/TGFeatureFlag/Core/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: providers
+            - path: swiftui_integration
+    example_app:
+        dir_name: TGFeatureFlag SwiftUI Demo App
+        title: TGFeatureFlag SwiftUI Demo App
+        scope:
+            - Example/TGFeatureFlagDemo/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: providers
+            - path: swiftui_integration
+    providers:
+        dir_name: Feature Flag Providers (Debug, Local, UserDefaults)
+        title: Feature Flag Providers (Debug, Local, UserDefaults)
+        scope:
+            - Sources/TGFeatureFlag/Providers/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: core
+            - path: example_app
+    swiftui_integration:
+        dir_name: SwiftUI Feature Flag Integration
+        title: SwiftUI Feature Flag Integration
+        scope:
+            - Sources/TGFeatureFlag/SwiftUI/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: core
+            - path: example_app

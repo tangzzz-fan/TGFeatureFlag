@@ -1,0 +1,1 @@
+Defines the FeatureFlagKey and FeatureFlagProvider protocols, an AsyncFeatureFlagProvider protocol for remote configs, a FeatureFlagGroup/GroupedFeatureFlag protocol for namespacing, plus an @Observable @MainActor service that chains providers to resolve typed feature-flag values with SwiftUI integration, diagnostic logging, and async refresh support.
