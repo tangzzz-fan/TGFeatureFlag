@@ -84,20 +84,39 @@ private struct BoolEditor<F: FeatureFlagKey>: View {
     let defaultValue: Bool
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
+    @State private var localValue: Bool
+    
+    init(feature: F, defaultValue: Bool, debugProvider: DebugProvider?) {
+        self.feature = feature
+        self.defaultValue = defaultValue
+        self.debugProvider = debugProvider
+        _localValue = State(initialValue: defaultValue)
+    }
+    
+    private var resolvedValue: Bool {
+        service.value(for: feature)
+    }
     
     var body: some View {
-        let currentValue = service.value(for: feature) as Bool
-        
         Toggle(isOn: Binding(
-            get: { currentValue },
+            get: { localValue },
             set: { newValue in
+                localValue = newValue
                 debugProvider?.setOverride(for: feature, value: newValue)
                 service.triggerUpdate()
             }
         )) {
-            Text(currentValue ? "ON" : "OFF")
+            Text(localValue ? "ON" : "OFF")
                 .bold()
-                .foregroundStyle(currentValue ? .green : .red)
+                .foregroundStyle(localValue ? .green : .red)
+        }
+        .onAppear {
+            localValue = resolvedValue
+        }
+        .onChange(of: resolvedValue) { _, newValue in
+            if localValue != newValue {
+                localValue = newValue
+            }
         }
     }
 }
@@ -107,14 +126,25 @@ private struct IntEditor<F: FeatureFlagKey>: View {
     let defaultValue: Int
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
+    @State private var localValue: Int
+    
+    init(feature: F, defaultValue: Int, debugProvider: DebugProvider?) {
+        self.feature = feature
+        self.defaultValue = defaultValue
+        self.debugProvider = debugProvider
+        _localValue = State(initialValue: defaultValue)
+    }
+    
+    private var resolvedValue: Int {
+        service.value(for: feature)
+    }
     
     var body: some View {
-        let currentValue = service.value(for: feature) as Int
-        
         HStack {
             Stepper(value: Binding(
-                get: { currentValue },
+                get: { localValue },
                 set: { newValue in
+                    localValue = newValue
                     debugProvider?.setOverride(for: feature, value: newValue)
                     service.triggerUpdate()
                 }
@@ -122,7 +152,7 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                 HStack {
                     Text("Value:")
                         .foregroundStyle(.secondary)
-                    Text("\(currentValue)")
+                    Text("\(localValue)")
                         .bold()
                         .monospacedDigit()
                 }
@@ -130,11 +160,20 @@ private struct IntEditor<F: FeatureFlagKey>: View {
             
             if debugProvider?.value(for: feature.rawValue) != nil {
                 Button(action: {
+                    localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
                     service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
+            }
+        }
+        .onAppear {
+            localValue = resolvedValue
+        }
+        .onChange(of: resolvedValue) { _, newValue in
+            if localValue != newValue {
+                localValue = newValue
             }
         }
     }
@@ -145,14 +184,25 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
     let defaultValue: Double
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
+    @State private var localValue: Double
+    
+    init(feature: F, defaultValue: Double, debugProvider: DebugProvider?) {
+        self.feature = feature
+        self.defaultValue = defaultValue
+        self.debugProvider = debugProvider
+        _localValue = State(initialValue: defaultValue)
+    }
+    
+    private var resolvedValue: Double {
+        service.value(for: feature)
+    }
     
     var body: some View {
-        let currentValue = service.value(for: feature) as Double
-        
         HStack {
             TextField("Value", value: Binding(
-                get: { currentValue },
+                get: { localValue },
                 set: { newValue in
+                    localValue = newValue
                     debugProvider?.setOverride(for: feature, value: newValue)
                     service.triggerUpdate()
                 }
@@ -162,18 +212,27 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
             .keyboardType(.decimalPad)
             #endif
             
-            Text(String(format: "%.2f", currentValue))
+            Text(String(format: "%.2f", localValue))
                 .bold()
                 .monospacedDigit()
                 .frame(minWidth: 60, alignment: .trailing)
             
             if debugProvider?.value(for: feature.rawValue) != nil {
                 Button(action: {
+                    localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
                     service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
+            }
+        }
+        .onAppear {
+            localValue = resolvedValue
+        }
+        .onChange(of: resolvedValue) { _, newValue in
+            if localValue != newValue {
+                localValue = newValue
             }
         }
     }
@@ -185,15 +244,25 @@ private struct StringEditor<F: FeatureFlagKey>: View {
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
     
-    @State private var text: String = ""
+    @State private var localValue: String
+    
+    init(feature: F, defaultValue: String, debugProvider: DebugProvider?) {
+        self.feature = feature
+        self.defaultValue = defaultValue
+        self.debugProvider = debugProvider
+        _localValue = State(initialValue: defaultValue)
+    }
+    
+    private var resolvedValue: String {
+        service.value(for: feature)
+    }
     
     var body: some View {
-        let currentValue = service.value(for: feature) as String
-        
         HStack {
             TextField("Value", text: Binding(
-                get: { currentValue },
+                get: { localValue },
                 set: { newValue in
+                    localValue = newValue
                     debugProvider?.setOverride(for: feature, value: newValue)
                     service.triggerUpdate()
                 }
@@ -202,11 +271,20 @@ private struct StringEditor<F: FeatureFlagKey>: View {
             
             if debugProvider?.value(for: feature.rawValue) != nil {
                 Button(action: {
+                    localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
                     service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
+            }
+        }
+        .onAppear {
+            localValue = resolvedValue
+        }
+        .onChange(of: resolvedValue) { _, newValue in
+            if localValue != newValue {
+                localValue = newValue
             }
         }
     }
