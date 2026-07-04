@@ -65,6 +65,10 @@ private struct FlagRow<F: FeatureFlagKey>: View {
                 BoolEditor(feature: feature, defaultValue: boolDefault, debugProvider: debugProvider)
             } else if let stringDefault = feature.defaultValue as? String {
                 StringEditor(feature: feature, defaultValue: stringDefault, debugProvider: debugProvider)
+            } else if let intDefault = feature.defaultValue as? Int {
+                IntEditor(feature: feature, defaultValue: intDefault, debugProvider: debugProvider)
+            } else if let doubleDefault = feature.defaultValue as? Double {
+                DoubleEditor(feature: feature, defaultValue: doubleDefault, debugProvider: debugProvider)
             } else {
                 Text("Unsupported Type: \(type(of: feature.defaultValue))")
                     .font(.caption)
@@ -94,6 +98,83 @@ private struct BoolEditor<F: FeatureFlagKey>: View {
             Text(currentValue ? "ON" : "OFF")
                 .bold()
                 .foregroundStyle(currentValue ? .green : .red)
+        }
+    }
+}
+
+private struct IntEditor<F: FeatureFlagKey>: View {
+    let feature: F
+    let defaultValue: Int
+    let debugProvider: DebugProvider?
+    @Environment(FeatureFlagService.self) private var service
+    
+    var body: some View {
+        let currentValue = service.value(for: feature) as Int
+        
+        HStack {
+            Stepper(value: Binding(
+                get: { currentValue },
+                set: { newValue in
+                    debugProvider?.setOverride(for: feature, value: newValue)
+                    service.triggerUpdate()
+                }
+            )) {
+                HStack {
+                    Text("Value:")
+                        .foregroundStyle(.secondary)
+                    Text("\(currentValue)")
+                        .bold()
+                        .monospacedDigit()
+                }
+            }
+            
+            if debugProvider?.value(for: feature.rawValue) != nil {
+                Button(action: {
+                    debugProvider?.setOverride(for: feature, value: nil)
+                    service.triggerUpdate()
+                }) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+            }
+        }
+    }
+}
+
+private struct DoubleEditor<F: FeatureFlagKey>: View {
+    let feature: F
+    let defaultValue: Double
+    let debugProvider: DebugProvider?
+    @Environment(FeatureFlagService.self) private var service
+    
+    var body: some View {
+        let currentValue = service.value(for: feature) as Double
+        
+        HStack {
+            TextField("Value", value: Binding(
+                get: { currentValue },
+                set: { newValue in
+                    debugProvider?.setOverride(for: feature, value: newValue)
+                    service.triggerUpdate()
+                }
+            ), format: .number)
+            .textFieldStyle(.roundedBorder)
+            #if os(iOS)
+            .keyboardType(.decimalPad)
+            #endif
+            
+            Text(String(format: "%.2f", currentValue))
+                .bold()
+                .monospacedDigit()
+                .frame(minWidth: 60, alignment: .trailing)
+            
+            if debugProvider?.value(for: feature.rawValue) != nil {
+                Button(action: {
+                    debugProvider?.setOverride(for: feature, value: nil)
+                    service.triggerUpdate()
+                }) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+            }
         }
     }
 }

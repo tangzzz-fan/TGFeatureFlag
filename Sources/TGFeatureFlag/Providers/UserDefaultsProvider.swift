@@ -1,10 +1,11 @@
 import Foundation
-import Combine
 
 /// A provider that reads feature flags from UserDefaults.
 /// This is commonly used to integrate with the iOS Settings.bundle or for simple persistence.
 ///
 /// It observes `UserDefaults.didChangeNotification` to automatically notify the service of changes.
+///
+/// - Note: `UserDefaults` is documented as thread-safe by Apple, so `@unchecked Sendable` is appropriate here.
 public final class UserDefaultsProvider: FeatureFlagProvider, @unchecked Sendable {
     public let name: String
     private let userDefaults: UserDefaults

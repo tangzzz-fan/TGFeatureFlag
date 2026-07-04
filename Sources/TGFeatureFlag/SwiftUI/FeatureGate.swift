@@ -7,8 +7,8 @@ import SwiftUI
 public struct FeatureGate<F: FeatureFlagKey, Content: View, Fallback: View>: View {
     
     private let feature: F
-    private let content: Content
-    private let fallback: Fallback
+    private let content: () -> Content
+    private let fallback: () -> Fallback
     
     // We expect the service to be injected via .environment
     @Environment(FeatureFlagService.self) private var service
@@ -20,19 +20,19 @@ public struct FeatureGate<F: FeatureFlagKey, Content: View, Fallback: View>: Vie
     ///   - fallback: The view to show if the feature is DISABLED.
     public init(
         _ feature: F,
-        @ViewBuilder content: () -> Content,
-        @ViewBuilder fallback: () -> Fallback
+        @ViewBuilder content: @escaping () -> Content,
+        @ViewBuilder fallback: @escaping () -> Fallback
     ) {
         self.feature = feature
-        self.content = content()
-        self.fallback = fallback()
+        self.content = content
+        self.fallback = fallback
     }
     
     public var body: some View {
         if service.isEnabled(feature) {
-            content
+            content()
         } else {
-            fallback
+            fallback()
         }
     }
 }
@@ -41,7 +41,7 @@ public extension FeatureGate where Fallback == EmptyView {
     /// Convenience initializer for when no fallback is needed.
     init(
         _ feature: F,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) {
         self.init(feature, content: content, fallback: { EmptyView() })
     }
