@@ -1,3 +1,0 @@
-- Feature flags are declared as a single `enum DemoFeature` conforming to `FeatureFlagKey` and `CaseIterable`, with each case mapping to a stable string key and providing both `defaultValue` and human-readable `description`.
-- Views consume flags exclusively through `@Environment(FeatureFlagService.self)` rather than direct instantiation, keeping flag resolution decoupled from view construction.
-- The provider chain is registered once in `init()` of the `@main` app using explicit `priority` ordering, documenting the intended precedence (Debug > Remote > UserDefaults > Local) in comments.

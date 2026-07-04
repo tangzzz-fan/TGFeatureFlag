@@ -1,1 +1,0 @@
-Swift standard library + Apple's `Observation` framework (`@Observable`) for reactive SwiftUI binding of flag changes. Swift Concurrency with `@MainActor` isolation, `async/await` for async provider refresh, and `Sendable` for cross-actor protocol conformance. `NSLock.withLock {}` for thread-safe mutable state in providers.

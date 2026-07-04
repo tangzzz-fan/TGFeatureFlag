@@ -1,3 +1,0 @@
-- Feature-flag identifiers conform to `FeatureFlagKey` as String-backed enums, supplying a per-case `defaultValue: Any` and relying on the protocol's default `description = rawValue`.
-- Typed access uses a generic `value<T>(for:)` method that casts the stored `Any` at call sites rather than exposing separate per-type overloads.
-- Providers are pure functions keyed by `String` (`feature.rawValue`) and return `Any?`, keeping the chain decoupled from concrete types until resolution time.

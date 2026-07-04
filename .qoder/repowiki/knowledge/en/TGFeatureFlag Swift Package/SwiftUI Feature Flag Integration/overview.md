@@ -1,1 +1,0 @@
-SwiftUI integration layer that exposes feature flags as a `@Environment`-injected service, a conditional `FeatureGate` container view, and an in-app debug UI for toggling overrides at runtime.

@@ -1,5 +1,0 @@
-Three independent providers conform to a shared `FeatureFlagProvider` protocol (defined outside this scope) exposing a `name: String` and `value(for:) -> Any?`. Each provider is a leaf type with no cross-dependencies:
-- `LocalProvider` (struct) wraps an immutable `[String: any Sendable]` dictionary for static or test-time configuration.
-- `DebugProvider` (final class) holds a mutable `[String: Any]` override map protected by an `NSLock`, plus `setOverride(for:value:)` and `reset()` APIs intended for debug builds.
-- `UserDefaultsProvider` (final class) reads via `UserDefaults.object(forKey:)` and advertises itself as suitable for Settings.bundle integration; it is marked `@unchecked Sendable` like the other mutable provider.
-Dependency direction is one-way: all three depend only on Foundation (and Combine imported by UserDefaultsProvider), never on each other or on higher-level TGFeatureFlag types beyond the protocol surface.

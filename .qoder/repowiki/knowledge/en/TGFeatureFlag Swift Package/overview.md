@@ -1,1 +1,0 @@
-Swift Package that ships the TGFeatureFlag framework, wiring core abstractions, concrete providers, SwiftUI integration, and a demo app into a single installable product.

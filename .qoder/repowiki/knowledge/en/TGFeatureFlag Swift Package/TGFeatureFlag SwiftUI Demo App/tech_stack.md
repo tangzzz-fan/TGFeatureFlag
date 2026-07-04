@@ -1,1 +1,0 @@
-SwiftUI + Xcode project; depends on the sibling `TGFeatureFlag` Swift package for `FeatureFlagService`, `FeatureFlagProvider`, `DebugProvider`, `UserDefaultsProvider`, `LocalProvider`, `FeatureGate`, and `FeatureFlagDebugView`.

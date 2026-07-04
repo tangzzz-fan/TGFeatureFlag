@@ -1,1 +1,0 @@
-A minimal SwiftUI demo app that wires TGFeatureFlag's service, providers, and debug UI to showcase five feature-flag usage scenarios in a tabbed interface.

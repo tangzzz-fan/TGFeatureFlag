@@ -1,3 +1,0 @@
-- Each provider exposes a human-readable `name` constant so consumers can identify the active source.
-- Mutable providers (`DebugProvider`, `UserDefaultsProvider`) are declared `final` and `@unchecked Sendable` rather than using actor isolation.
-- Thread safety for mutable state is implemented manually with `NSLock` paired with `defer { lock.unlock() }` around every read/write path.
