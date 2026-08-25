@@ -3,13 +3,13 @@ import SwiftUI
 /// A debug view to view and toggle feature flags at runtime.
 public struct FeatureFlagDebugView<F: FeatureFlagKey & CaseIterable>: View {
     @Environment(FeatureFlagService.self) private var service
-    
+
     private var debugProvider: DebugProvider? {
         service.provider(ofType: DebugProvider.self)
     }
-    
+
     public init() {}
-    
+
     public var body: some View {
         List {
             Section("Feature Flags") {
@@ -17,7 +17,7 @@ public struct FeatureFlagDebugView<F: FeatureFlagKey & CaseIterable>: View {
                     FlagRow(feature: feature, debugProvider: debugProvider)
                 }
             }
-            
+
             if let provider = debugProvider {
                 Section {
                     Button("Reset All Overrides") {
@@ -39,40 +39,34 @@ private struct FlagRow<F: FeatureFlagKey>: View {
     let feature: F
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
-    
-    // We determine the type based on defaultValue
+
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
                 VStack(alignment: .leading) {
                     Text(feature.description)
                         .font(.headline)
-                    Text(feature.rawValue)
+                    Text(feature.lookupKey)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                
-                // Value Display & Override Indicator
-                if debugProvider?.value(for: feature.rawValue) != nil {
+
+                if debugProvider?.value(for: feature.lookupKey) != nil {
                     Image(systemName: "pencil.circle.fill")
                         .foregroundStyle(.orange)
                 }
             }
-            
-            // Editor based on type
-            if let boolDefault = feature.defaultValue as? Bool {
+
+            switch feature.defaultValue {
+            case .bool(let boolDefault):
                 BoolEditor(feature: feature, defaultValue: boolDefault, debugProvider: debugProvider)
-            } else if let stringDefault = feature.defaultValue as? String {
+            case .string(let stringDefault):
                 StringEditor(feature: feature, defaultValue: stringDefault, debugProvider: debugProvider)
-            } else if let intDefault = feature.defaultValue as? Int {
+            case .int(let intDefault):
                 IntEditor(feature: feature, defaultValue: intDefault, debugProvider: debugProvider)
-            } else if let doubleDefault = feature.defaultValue as? Double {
+            case .double(let doubleDefault):
                 DoubleEditor(feature: feature, defaultValue: doubleDefault, debugProvider: debugProvider)
-            } else {
-                Text("Unsupported Type: \(type(of: feature.defaultValue))")
-                    .font(.caption)
-                    .foregroundStyle(.red)
             }
         }
         .padding(.vertical, 4)
@@ -85,24 +79,24 @@ private struct BoolEditor<F: FeatureFlagKey>: View {
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
     @State private var localValue: Bool
-    
+
     init(feature: F, defaultValue: Bool, debugProvider: DebugProvider?) {
         self.feature = feature
         self.defaultValue = defaultValue
         self.debugProvider = debugProvider
         _localValue = State(initialValue: defaultValue)
     }
-    
+
     private var resolvedValue: Bool {
-        service.value(for: feature)
+        service.boolValue(for: feature)
     }
-    
+
     var body: some View {
         Toggle(isOn: Binding(
             get: { localValue },
             set: { newValue in
                 localValue = newValue
-                debugProvider?.setOverride(for: feature, value: newValue)
+                debugProvider?.setOverride(for: feature, value: .bool(newValue))
                 service.triggerUpdate()
             }
         )) {
@@ -127,25 +121,25 @@ private struct IntEditor<F: FeatureFlagKey>: View {
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
     @State private var localValue: Int
-    
+
     init(feature: F, defaultValue: Int, debugProvider: DebugProvider?) {
         self.feature = feature
         self.defaultValue = defaultValue
         self.debugProvider = debugProvider
         _localValue = State(initialValue: defaultValue)
     }
-    
+
     private var resolvedValue: Int {
-        service.value(for: feature)
+        service.intValue(for: feature)
     }
-    
+
     var body: some View {
         HStack {
             Stepper(value: Binding(
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: newValue)
+                    debugProvider?.setOverride(for: feature, value: .int(newValue))
                     service.triggerUpdate()
                 }
             )) {
@@ -157,8 +151,8 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                         .monospacedDigit()
                 }
             }
-            
-            if debugProvider?.value(for: feature.rawValue) != nil {
+
+            if debugProvider?.value(for: feature.lookupKey) != nil {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
@@ -185,25 +179,25 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
     @State private var localValue: Double
-    
+
     init(feature: F, defaultValue: Double, debugProvider: DebugProvider?) {
         self.feature = feature
         self.defaultValue = defaultValue
         self.debugProvider = debugProvider
         _localValue = State(initialValue: defaultValue)
     }
-    
+
     private var resolvedValue: Double {
-        service.value(for: feature)
+        service.doubleValue(for: feature)
     }
-    
+
     var body: some View {
         HStack {
             TextField("Value", value: Binding(
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: newValue)
+                    debugProvider?.setOverride(for: feature, value: .double(newValue))
                     service.triggerUpdate()
                 }
             ), format: .number)
@@ -211,13 +205,13 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
             #if os(iOS)
             .keyboardType(.decimalPad)
             #endif
-            
+
             Text(String(format: "%.2f", localValue))
                 .bold()
                 .monospacedDigit()
                 .frame(minWidth: 60, alignment: .trailing)
-            
-            if debugProvider?.value(for: feature.rawValue) != nil {
+
+            if debugProvider?.value(for: feature.lookupKey) != nil {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
@@ -243,33 +237,33 @@ private struct StringEditor<F: FeatureFlagKey>: View {
     let defaultValue: String
     let debugProvider: DebugProvider?
     @Environment(FeatureFlagService.self) private var service
-    
+
     @State private var localValue: String
-    
+
     init(feature: F, defaultValue: String, debugProvider: DebugProvider?) {
         self.feature = feature
         self.defaultValue = defaultValue
         self.debugProvider = debugProvider
         _localValue = State(initialValue: defaultValue)
     }
-    
+
     private var resolvedValue: String {
-        service.value(for: feature)
+        service.stringValue(for: feature)
     }
-    
+
     var body: some View {
         HStack {
             TextField("Value", text: Binding(
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: newValue)
+                    debugProvider?.setOverride(for: feature, value: .string(newValue))
                     service.triggerUpdate()
                 }
             ))
             .textFieldStyle(.roundedBorder)
-            
-            if debugProvider?.value(for: feature.rawValue) != nil {
+
+            if debugProvider?.value(for: feature.lookupKey) != nil {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)

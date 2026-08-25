@@ -8,18 +8,18 @@ enum DemoFeature: String, FeatureFlagKey, CaseIterable {
     case apiBaseURL = "config_api_base_url"
     case welcomeMessage = "config_welcome_message"
 
-    var defaultValue: Any {
+    var defaultValue: FeatureFlagValue {
         switch self {
         case .newHomeDesign:
-            return false
+            return .bool(false)
         case .socialTab:
-            return false
+            return .bool(false)
         case .experimentalCheckout:
-            return false
+            return .bool(false)
         case .apiBaseURL:
-            return "https://api.production.example"
+            return .string("https://api.production.example")
         case .welcomeMessage:
-            return "Feature flags are currently using local defaults."
+            return .string("Feature flags are currently using local defaults.")
         }
     }
 
@@ -44,7 +44,7 @@ enum CheckoutFeature: String, FeatureFlagKey, GroupedFeatureFlag, CaseIterable {
     case newPayment = "new_payment"
     case expressShipping = "express_shipping"
 
-    var defaultValue: Any { false }
+    var defaultValue: FeatureFlagValue { .bool(false) }
 
     var description: String {
         switch self {
@@ -92,10 +92,12 @@ private extension TGFeatureFlagDemoApp {
 
         let localProvider = LocalProvider(
             flags: [
-                DemoFeature.newHomeDesign.rawValue: true,
-                DemoFeature.experimentalCheckout.rawValue: false,
-                DemoFeature.apiBaseURL.rawValue: "https://api.local.example",
-                DemoFeature.welcomeMessage.rawValue: "Local provider is active until remote config refreshes."
+                DemoFeature.newHomeDesign.lookupKey: .bool(true),
+                DemoFeature.experimentalCheckout.lookupKey: .bool(false),
+                DemoFeature.apiBaseURL.lookupKey: .string("https://api.local.example"),
+                DemoFeature.welcomeMessage.lookupKey: .string(
+                    "Local provider is active until remote config refreshes."
+                )
             ]
         )
         service.register(provider: localProvider, priority: .lowest)

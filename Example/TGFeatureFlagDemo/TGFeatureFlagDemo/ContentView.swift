@@ -34,13 +34,13 @@ struct ContentView: View {
 
                 Section("Configuration") {
                     LabeledContent("API Base URL") {
-                        Text(service.value(for: DemoFeature.apiBaseURL) as String)
+                        Text(service.stringValue(for: DemoFeature.apiBaseURL))
                             .font(.caption)
                             .monospaced()
                             .multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Welcome Message") {
-                        Text(service.value(for: DemoFeature.welcomeMessage) as String)
+                        Text(service.stringValue(for: DemoFeature.welcomeMessage))
                             .font(.caption)
                             .multilineTextAlignment(.trailing)
                     }

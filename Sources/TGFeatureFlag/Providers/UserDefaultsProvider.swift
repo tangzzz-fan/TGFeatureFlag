@@ -9,7 +9,7 @@ import Foundation
 public final class UserDefaultsProvider: FeatureFlagProvider, @unchecked Sendable {
     public let name: String
     private let userDefaults: UserDefaults
-    
+
     /// Initializes the provider.
     /// - Parameters:
     ///   - userDefaults: The UserDefaults instance to read from. Defaults to `.standard`.
@@ -18,10 +18,11 @@ public final class UserDefaultsProvider: FeatureFlagProvider, @unchecked Sendabl
         self.userDefaults = userDefaults
         self.name = name
     }
-    
-    public func value(for key: String) -> Any? {
-        // UserDefaults returns nil if the key doesn't exist, which is what we want.
-        // It handles String, Int, Bool automatically.
-        return userDefaults.object(forKey: key)
+
+    public func value(for key: String) -> FeatureFlagValue? {
+        guard let object = userDefaults.object(forKey: key) else {
+            return nil
+        }
+        return FeatureFlagValue(any: object)
     }
 }

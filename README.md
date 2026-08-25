@@ -2,50 +2,54 @@
 
 [![CI](https://github.com/tangzzz-fan/TGFeatureFlag/actions/workflows/ci.yml/badge.svg)](https://github.com/tangzzz-fan/TGFeatureFlag/actions/workflows/ci.yml)
 
-A powerful, flexible, and type-safe feature flag framework for Apple platforms, built with Swift 6 and the Observation framework.
+A type-safe feature flag framework for Apple platforms, built with Swift 6 strict concurrency.
 
-TGFeatureFlag decouples feature releases from code deployment, enabling safer releases, A/B testing, percentage-based rollouts, and dynamic configuration management.
+TGFeatureFlag decouples feature releases from code deployment, enabling safer releases, A/B testing, percentage-based rollouts, and dynamic configuration.
 
 ## Platforms
 
 iOS 17+, macOS 14+, tvOS 17+, watchOS 10+
 
+## Two modes
+
+| Mode | When to use | Source of truth |
+|------|-------------|-----------------|
+| **Resolver + Snapshot** (recommended for Redux) | TGReduxKit / any Store-as-SoT app | App Store after `dispatch(.loaded(snapshot))` |
+| **FeatureFlagService** (`@Observable`) | Demo / non-Redux SwiftUI apps | The service itself |
+
+This package does **not** depend on TGReduxKit. Redux apps adapt `FeatureFlagResolver` to their own `FeatureFlagFetching`-style port (see [TGReduxKit 5.0.1 Shopping demo](https://github.com/tangzzz-fan/TGReduxKit) as the reference wiring).
+
+```text
+AsyncProvider.fetchValues → Resolver.refresh
+Resolver.snapshot(for:) → App Adapter → dispatch(.loaded)
+Reducer projects → Views read Store (not Environment Service)
+```
+
 ## Features
 
-- **Protocol-Oriented Design**: Define flags using enums conforming to `FeatureFlagKey`.
-- **Type-Safe Values**: Support for `Bool`, `String`, `Int`, and `Double` values.
-- **Priority Chain Resolution**: Flexible provider system with `.highest`, `.lowest`, and `.custom(Int)` priorities.
-- **Async Provider Support**: `AsyncFeatureFlagProvider` protocol for remote config services (Firebase, LaunchDarkly, etc.).
-- **Percentage-Based Rollouts**: `RolloutProvider` for deterministic, per-user feature rollouts.
-- **Flag Namespacing**: `FeatureFlagGroup` and `GroupedFeatureFlag` for organizing flags into logical groups.
-- **Diagnostic Logging**: `FeatureFlagLogger` protocol to observe which provider resolved each flag.
-- **SwiftUI Ready**: Built on `@Observable` for seamless reactive UI updates.
-- **Swift 6 Concurrency Safe**: `@MainActor`-isolated service, `Sendable` providers.
-- **Built-in Debug Tools**: Runtime override view with editors for all value types.
+- **Typed values**: `FeatureFlagValue` (`bool` / `string` / `int` / `double`) — no `Any`, no resolution `fatalError`.
+- **Sendable Resolver**: build cold `FeatureFlagSnapshot` values for Redux middleware.
+- **Priority chain**: `.highest` / `.lowest` / `.custom(Int)`.
+- **Async providers**: `AsyncFeatureFlagProvider` + `refresh()`.
+- **Rollouts**: stable FNV-1a hashing (process-independent).
+- **Grouping**: `FeatureFlagGroup` / `GroupedFeatureFlag` with unified `lookupKey`.
+- **SwiftUI**: `FeatureGate` (Environment Service) and `SnapshotFeatureGate` (injected snapshot).
 
 ## Installation
 
-### Swift Package Manager
-
-Add `TGFeatureFlag` to your `Package.swift`:
-
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "0.4.0")
+    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "0.5.0")
 ]
 ```
 
-Or in Xcode: **File → Add Package Dependencies**, then enter the repository URL.
-
 ## Continuous Integration
 
-GitHub Actions runs `swift build` and `swift test` automatically for pushes and pull requests targeting `main`. The workflow file lives at `.github/workflows/ci.yml`.
+GitHub Actions runs `swift build` and `swift test` for pushes and PRs targeting `main`.
 
 ## Usage
 
 ### 1. Define Feature Flags
-
-Create an enum conforming to `FeatureFlagKey`. The `defaultValue` property supports `Bool`, `String`, `Int`, and `Double`.
 
 ```swift
 import TGFeatureFlag
@@ -55,27 +59,62 @@ enum AppFeature: String, FeatureFlagKey, CaseIterable {
     case apiBaseUrl = "config_api_base_url"
     case maxRetryCount = "config_retry_count"
 
-    var defaultValue: Any {
+    var defaultValue: FeatureFlagValue {
         switch self {
-        case .newProfileDesign: return false
-        case .apiBaseUrl: return "https://api.production.com"
-        case .maxRetryCount: return 3
-        }
-    }
-
-    var description: String {
-        switch self {
-        case .newProfileDesign: return "New Profile UI"
-        case .apiBaseUrl: return "API Base URL"
-        case .maxRetryCount: return "Max Retry Count"
+        case .newProfileDesign: return .bool(false)
+        case .apiBaseUrl: return .string("https://api.production.com")
+        case .maxRetryCount: return .int(3)
         }
     }
 }
 ```
 
-### 2. Setup the Service
+### 2a. Redux path — Resolver + Snapshot
 
-Initialize `FeatureFlagService` and register providers in priority order.
+```swift
+let resolver = FeatureFlagResolver()
+resolver.register(provider: DebugProvider(), priority: .highest)
+resolver.register(provider: MyRemoteProvider(), priority: .custom(80))
+resolver.register(provider: LocalProvider(flags: [:]), priority: .lowest)
+
+_ = await resolver.refresh()
+let snapshot = resolver.snapshot(for: AppFeature.allCases)
+
+// App-owned adapter (mirrors TGReduxKit Shopping FeatureFlagFetching):
+// map snapshot → domain DTO, then middleware dispatches .loaded(dto, now())
+```
+
+Illustrative adapter (lives in the app, not this package):
+
+```swift
+struct TGFFFetchingAdapter: FeatureFlagFetching {
+    let resolver: FeatureFlagResolver
+
+    func fetchSnapshot() async -> AppFeatureFlagSnapshot {
+        _ = await resolver.refresh()
+        let remote = resolver.snapshot(for: AppFeature.allCases)
+        return AppFeatureFlagSnapshot(
+            isNewProfileEnabled: remote.isEnabled(AppFeature.newProfileDesign)
+            // ...map other keys
+        )
+    }
+}
+
+// Composition Root (TGReduxKit 5.0.1 style):
+// makeFeatureFlagsMiddleware(featureFlags: adapter, now: { Date() })
+```
+
+SwiftUI with an injected snapshot (no `FeatureFlagService`):
+
+```swift
+SnapshotFeatureGate(AppFeature.newProfileDesign, snapshot: storeState.flags) {
+    NewProfileView()
+} fallback: {
+    LegacyProfileView()
+}
+```
+
+### 2b. Non-Redux path — FeatureFlagService
 
 ```swift
 @main
@@ -84,22 +123,10 @@ struct MyApp: App {
 
     init() {
         let s = FeatureFlagService()
-
-        // Attach a diagnostic logger (optional)
-        s.setLogger(MyLogger())
-
-        // 1. Debug overrides (highest priority)
         s.register(provider: DebugProvider(), priority: .highest)
-
-        // 2. Remote config (async provider)
-        s.register(provider: MyRemoteProvider(), priority: .custom(80))
-
-        // 3. UserDefaults
-        s.register(provider: UserDefaultsProvider(), priority: .custom(40))
-
-        // 4. Local fallback (lowest priority)
-        s.register(provider: LocalProvider(), priority: .lowest)
-
+        s.register(provider: LocalProvider(flags: [
+            AppFeature.newProfileDesign.lookupKey: .bool(true)
+        ]), priority: .lowest)
         _service = State(initialValue: s)
     }
 
@@ -112,142 +139,58 @@ struct MyApp: App {
 }
 ```
 
-### 3. Use in SwiftUI
-
-#### FeatureGate — Conditional View Rendering
-
 ```swift
 FeatureGate(AppFeature.newProfileDesign) {
     NewProfileView()
 } fallback: {
-    OldProfileView()
+    LegacyProfileView()
 }
+
+let url = service.stringValue(for: AppFeature.apiBaseUrl)
+let retries = service.intValue(for: AppFeature.maxRetryCount)
 ```
 
-#### Environment Access
+### 3. Async remote provider
 
 ```swift
-struct ContentView: View {
-    @Environment(FeatureFlagService.self) var service
+final class MyRemoteProvider: AsyncFeatureFlagProvider, Sendable {
+    let name = "Remote"
+    private let lock = OSAllocatedUnfairLock(initialState: [String: FeatureFlagValue]())
 
-    var body: some View {
-        if service.isEnabled(AppFeature.newProfileDesign) {
-            Text("New Design")
-        }
-        let url: String = service.value(for: AppFeature.apiBaseUrl)
-        let retries: Int = service.value(for: AppFeature.maxRetryCount)
+    func value(for key: String) -> FeatureFlagValue? {
+        lock.withLock { $0[key] }
     }
-}
-```
-
-### 4. Async Providers (Remote Config)
-
-Implement `AsyncFeatureFlagProvider` for remote config services. The sync `value(for:)` returns cached values; call `refresh()` to fetch updates.
-
-```swift
-final class MyRemoteProvider: AsyncFeatureFlagProvider, @unchecked Sendable {
-    let name = "Remote Config"
-    private var cache: [String: Any] = [:]
-
-    func value(for key: String) -> Any? { cache[key] }
 
     func fetchValues() async throws {
-        // Fetch from your remote config service
-        let values = try await RemoteConfig.fetch()
-        cache = values
+        // fetch + lock.withLock { $0 = mapped }
     }
 }
-
-// Trigger refresh from your UI
-let failures = await service.refresh()
 ```
 
-### 5. Percentage-Based Rollouts
-
-Use `RolloutProvider` to gradually release features to a percentage of users. Results are deterministic per user ID.
-
-```swift
-let rollout = RolloutProvider(userId: currentUser.id)
-rollout.setRollout(for: AppFeature.newProfileDesign, percentage: 50) // 50% of users
-service.register(provider: rollout, priority: .custom(80))
-```
-
-### 6. Flag Namespacing (Groups)
-
-Organize flags into groups with automatic key prefixing using `GroupedFeatureFlag`.
+### 4. Grouped keys
 
 ```swift
 enum CheckoutFeature: String, FeatureFlagKey, GroupedFeatureFlag {
-    case v2Flow = "v2Flow"
-    case newPayment = "newPayment"
-
-    var defaultValue: Any { false }
-
-    static var group: FeatureFlagGroup {
-        FeatureFlagGroup(prefix: "checkout")
-    }
+    case v2Flow
+    var defaultValue: FeatureFlagValue { .bool(false) }
+    static var group: FeatureFlagGroup { FeatureFlagGroup(prefix: "checkout") }
 }
 
-// Provider lookup uses qualified keys: "checkout.v2Flow", "checkout.newPayment"
-service.isEnabled(CheckoutFeature.v2Flow)
+// lookupKey == "checkout.v2Flow" for providers, debug overrides, and rollouts
 ```
 
-### 7. Diagnostic Logging
-
-Implement `FeatureFlagLogger` to observe which provider resolved each flag. Useful for production debugging and analytics.
+### 5. Rollouts
 
 ```swift
-struct ConsoleLogger: FeatureFlagLogger {
-    func log(flag: String, resolvedBy provider: String?, value: Any?) {
-        print("[Flag] \(flag) = \(value ?? "nil") (via: \(provider ?? "default"))")
-    }
-}
-
-service.setLogger(ConsoleLogger())
+let rollout = RolloutProvider(userId: userId)
+rollout.setRollout(for: AppFeature.newProfileDesign, percentage: 25)
+// 0% returns .bool(false) (does not fall through); 100% returns .bool(true)
 ```
 
-### 8. Debug View
+## Resolution order
 
-Include `FeatureFlagDebugView` in your app for runtime flag overrides. Supports editors for `Bool`, `String`, `Int`, and `Double`.
-
-```swift
-NavigationLink("Debug Flags") {
-    FeatureFlagDebugView<AppFeature>()
-}
-```
-
-## Architecture
-
-The framework is built around five core files:
-
-| Component | Role |
-|-----------|------|
-| `FeatureFlagKey` | Protocol defining flag identity, default value, and description. |
-| `FeatureFlagProvider` | Protocol for pluggable value sources. |
-| `AsyncFeatureFlagProvider` | Extension for providers that fetch values asynchronously. |
-| `FeatureFlagGroup` | Namespace support via `GroupedFeatureFlag` protocol. |
-| `FeatureFlagService` | `@MainActor @Observable` orchestrator that resolves values across the provider chain. |
-
-### Priority Chain
-
-Providers are sorted by priority (highest first). When a value is requested, the service iterates through the chain and returns the first non-nil result. If no provider has a value, the flag's `defaultValue` is used.
-
-| Priority | Use Case |
-|----------|----------|
-| `.highest` | Debug overrides, QA tools |
-| `.custom(80)` | Remote config, rollout providers |
-| `.custom(40)` | UserDefaults, persisted settings |
-| `.lowest` | Local defaults, fallback providers |
-
-### Built-in Providers
-
-| Provider | Description |
-|----------|-------------|
-| `DebugProvider` | Runtime overrides for development and QA. |
-| `UserDefaultsProvider` | Reads from `UserDefaults` or a custom suite. |
-| `LocalProvider` | Static in-memory values as a fallback. |
-| `RolloutProvider` | Deterministic percentage-based rollouts per user. |
+Providers are sorted by priority (highest first). The first non-`nil` value wins; otherwise `defaultValue` is used. All mutable overrides use `lookupKey` (qualified for grouped flags).
 
 ## License
 
-This project is available under the MIT License. See [LICENSE](LICENSE) for details.
+See repository license file.

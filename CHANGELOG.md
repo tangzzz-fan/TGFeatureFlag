@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-25
+
+### Added
+- **`FeatureFlagValue`**: Typed `bool` / `string` / `int` / `double` values (`Sendable`, `Equatable`, `Codable`). Replaces `Any` on keys, providers, and loggers.
+- **`FeatureFlagSnapshot`**: Cold key → value map for Redux / Store-as-SoT apps.
+- **`FeatureFlagResolver`**: Non-MainActor `Sendable` resolver with `value` / `isEnabled` / `snapshot(for:)` / `refresh()`. Aligns with TGReduxKit 5.0.1 `FeatureFlagFetching` adapter shape (no Redux dependency).
+- **`SnapshotFeatureGate`**: SwiftUI gate driven by an injected snapshot (no `FeatureFlagService` environment).
+- **`FeatureFlagPriority`**: Shared priority enum for Resolver and Service.
+- **Stable rollout hashing**: FNV-1a 64-bit over UTF-8 (`userId:key`).
+- **Tests**: Grouped + debug override, 0% blocks fallthrough, stable hash, Resolver snapshot / Codable.
+
+### Changed
+- **`swiftLanguageModes: [.v6]`** in `Package.swift`.
+- **`FeatureFlagKey.defaultValue`**: now `FeatureFlagValue`.
+- **`FeatureFlagProvider.value(for:)`**: returns `FeatureFlagValue?`.
+- **Unified `lookupKey`**: Debug / Rollout / Local(`enabledFeatures`) write the same key Service/Resolver read (fixes grouped override miss).
+- **`FeatureFlagService`**: returns `FeatureFlagValue`; adds `boolValue` / `stringValue` / `intValue` / `doubleValue` / `snapshot(for:)`. Documented as non-Redux / demo SoT only.
+- **Docs**: README + DesignInfo describe dual mode and Redux Store-as-SoT; install version `from: "0.5.0"`.
+
+### Fixed
+- **0% rollout** now returns `.bool(false)` instead of `nil` (no accidental fallthrough).
+- Removed fake `try/catch` around non-throwing provider lookups.
+- Removed resolution-path `fatalError` on type mismatch.
+
+### Breaking
+- Call sites must migrate `defaultValue` and provider dictionaries from `Any` / untyped literals to `FeatureFlagValue`.
+- `service.value(for:)` no longer returns a generic `T`; use typed accessors or switch on `FeatureFlagValue`.
+- `FeatureFlagLogger.log(..., value:)` now takes `FeatureFlagValue?`.
+- `DebugProvider.setOverride` / `RolloutProvider.setRollout` take `FeatureFlagValue` (and use `lookupKey`).
+
 ## [0.4.0] - 2026-07-04
 
 ### Added
@@ -71,3 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed generic parameter inference issues in SwiftUI views.
 - Fixed layout occlusion issues in Product Detail page when navigation bar is hidden.
+
+[0.5.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/0.0.1...0.5.0
+[0.0.1]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/0.0.1

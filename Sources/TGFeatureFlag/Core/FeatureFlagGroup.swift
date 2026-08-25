@@ -11,7 +11,7 @@ import Foundation
 ///     case newDesign
 ///     case darkMode
 ///
-///     var defaultValue: Any { true }
+///     var defaultValue: FeatureFlagValue { .bool(true) }
 ///
 ///     static var group: FeatureFlagGroup {
 ///         FeatureFlagGroup(prefix: "ui")
@@ -53,7 +53,7 @@ public struct FeatureFlagGroup: Sendable, Hashable {
 ///     case v2Flow
 ///     case newPayment
 ///
-///     var defaultValue: Any { false }
+///     var defaultValue: FeatureFlagValue { .bool(false) }
 ///
 ///     static var group: FeatureFlagGroup {
 ///         FeatureFlagGroup(prefix: "checkout")
