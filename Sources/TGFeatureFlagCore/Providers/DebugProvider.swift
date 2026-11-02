@@ -3,10 +3,11 @@ import os
 
 /// A mutable provider intended for debug builds.
 /// Allows runtime toggling of feature flags to test different states.
-public final class DebugProvider: FeatureFlagProvider, Sendable {
+public final class DebugProvider: FeatureFlagChangePublishing, Sendable {
     public let name: String = "Debug Override"
 
     private let lock = OSAllocatedUnfairLock(initialState: [String: FeatureFlagValue]())
+    private let changes = FeatureFlagChangeBroadcaster()
 
     public init() {}
 
@@ -27,12 +28,22 @@ public final class DebugProvider: FeatureFlagProvider, Sendable {
                 overrides.removeValue(forKey: key)
             }
         }
+        changes.notify()
     }
 
     /// Clears all overrides.
     public func reset() {
-        lock.withLock { overrides in
+        let hadOverrides = lock.withLock { overrides -> Bool in
+            let had = !overrides.isEmpty
             overrides.removeAll()
+            return had
         }
+        // Skip the notification when there was nothing to clear, so a reset on an untouched
+        // provider does not invalidate every observer for no reason.
+        if hadOverrides { changes.notify() }
+    }
+
+    public func observeChanges(_ handler: @escaping @Sendable () -> Void) -> FeatureFlagChangeObservation {
+        changes.observe(handler)
     }
 }

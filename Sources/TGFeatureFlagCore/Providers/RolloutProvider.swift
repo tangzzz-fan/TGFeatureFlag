@@ -13,13 +13,15 @@ import os
 /// rollout.setRollout(for: "new_feature", percentage: 50) // 50% rollout
 /// resolver.register(provider: rollout, priority: .custom(80))
 /// ```
-public final class RolloutProvider: FeatureFlagProvider, Sendable {
+public final class RolloutProvider: FeatureFlagChangePublishing, Sendable {
     public let name: String
 
-    private let userId: String
-    private let lock = OSAllocatedUnfairLock(initialState: State())
+    private let lock: OSAllocatedUnfairLock<State>
+    private let changes = FeatureFlagChangeBroadcaster()
 
     private struct State: Sendable {
+        /// The identity used for bucketing.
+        var userId: String
         /// Per-flag rollout percentages (0-100).
         var rollouts: [String: Int] = [:]
         /// Per-flag overrides for specific flag values (non-Bool).
@@ -31,8 +33,26 @@ public final class RolloutProvider: FeatureFlagProvider, Sendable {
     ///   - userId: A stable identifier for the current user (e.g., user ID, device UUID).
     ///   - name: A display name for this provider.
     public init(userId: String, name: String = "Rollout") {
-        self.userId = userId
         self.name = name
+        lock = OSAllocatedUnfairLock(initialState: State(userId: userId))
+    }
+
+    /// The identity used for bucketing.
+    ///
+    /// Settable because identity changes at runtime — a user signs in, signs out, or switches
+    /// accounts. Buckets are derived from this value, so a stale identity silently keeps
+    /// serving the previous user's assignment. Assigning notifies observers so the UI
+    /// re-resolves against the new buckets.
+    public var userId: String {
+        get { lock.withLock { $0.userId } }
+        set {
+            let changed = lock.withLock { state -> Bool in
+                guard state.userId != newValue else { return false }
+                state.userId = newValue
+                return true
+            }
+            if changed { changes.notify() }
+        }
     }
 
     /// Sets the rollout percentage for a feature flag.
@@ -55,15 +75,18 @@ public final class RolloutProvider: FeatureFlagProvider, Sendable {
                 state.rolloutValues.removeValue(forKey: key)
             }
         }
+        changes.notify()
     }
 
     /// Removes the rollout configuration for a feature flag.
     public func removeRollout<F: FeatureFlagKey>(for feature: F) {
         let key = feature.lookupKey
-        lock.withLock { state in
-            state.rollouts.removeValue(forKey: key)
+        let removed = lock.withLock { state -> Bool in
+            let had = state.rollouts.removeValue(forKey: key) != nil
             state.rolloutValues.removeValue(forKey: key)
+            return had
         }
+        if removed { changes.notify() }
     }
 
     /// Returns the current rollout percentage for a flag, if set.
@@ -74,35 +97,22 @@ public final class RolloutProvider: FeatureFlagProvider, Sendable {
     }
 
     public func value(for key: String) -> FeatureFlagValue? {
-        let (percentage, customValue): (Int?, FeatureFlagValue?) = lock.withLock { state in
-            (state.rollouts[key], state.rolloutValues[key])
+        let (userId, percentage, customValue): (String, Int?, FeatureFlagValue?) = lock.withLock { state in
+            (state.userId, state.rollouts[key], state.rolloutValues[key])
         }
 
         guard let percentage else { return nil }
 
-        // 100% rollout: always enabled
-        if percentage >= 100 {
-            return customValue ?? .bool(true)
-        }
-
-        // 0% rollout: always disabled (do not fall through to lower providers)
-        if percentage <= 0 {
-            return customValue ?? .bool(false)
-        }
-
-        // Deterministic hash-based rollout
-        if isInRollout(key: key, percentage: percentage) {
-            return customValue ?? .bool(true)
-        }
-
-        return .bool(false)
+        return RolloutResolution.value(
+            userId: userId,
+            key: key,
+            percentage: percentage,
+            customValue: customValue
+        )
     }
 
-    /// Determines if the user is within the rollout percentage using a stable FNV-1a hash.
-    private func isInRollout(key: String, percentage: Int) -> Bool {
-        let hashInput = "\(userId):\(key)"
-        let bucket = Int(StableHash.fnv1a64(hashInput) % 100)
-        return bucket < percentage
+    public func observeChanges(_ handler: @escaping @Sendable () -> Void) -> FeatureFlagChangeObservation {
+        changes.observe(handler)
     }
 }
 

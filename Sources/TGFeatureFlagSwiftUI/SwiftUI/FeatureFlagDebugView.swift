@@ -1,4 +1,5 @@
 import SwiftUI
+import TGFeatureFlagCore
 
 /// A debug view to view and toggle feature flags at runtime.
 public struct FeatureFlagDebugView<F: FeatureFlagKey & CaseIterable>: View {
@@ -22,7 +23,6 @@ public struct FeatureFlagDebugView<F: FeatureFlagKey & CaseIterable>: View {
                 Section {
                     Button("Reset All Overrides") {
                         provider.reset()
-                        service.triggerUpdate()
                     }
                     .foregroundStyle(.red)
                 }
@@ -88,7 +88,7 @@ private struct BoolEditor<F: FeatureFlagKey>: View {
     }
 
     private var resolvedValue: Bool {
-        service.boolValue(for: feature)
+        service.rawValue(for: feature).boolValue ?? defaultValue
     }
 
     var body: some View {
@@ -97,7 +97,6 @@ private struct BoolEditor<F: FeatureFlagKey>: View {
             set: { newValue in
                 localValue = newValue
                 debugProvider?.setOverride(for: feature, value: .bool(newValue))
-                service.triggerUpdate()
             }
         )) {
             Text(localValue ? "ON" : "OFF")
@@ -130,7 +129,7 @@ private struct IntEditor<F: FeatureFlagKey>: View {
     }
 
     private var resolvedValue: Int {
-        service.intValue(for: feature)
+        service.rawValue(for: feature).intValue ?? defaultValue
     }
 
     var body: some View {
@@ -140,7 +139,6 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                 set: { newValue in
                     localValue = newValue
                     debugProvider?.setOverride(for: feature, value: .int(newValue))
-                    service.triggerUpdate()
                 }
             )) {
                 HStack {
@@ -156,7 +154,6 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
-                    service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
@@ -188,7 +185,7 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
     }
 
     private var resolvedValue: Double {
-        service.doubleValue(for: feature)
+        service.rawValue(for: feature).doubleValue ?? defaultValue
     }
 
     var body: some View {
@@ -198,7 +195,6 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
                 set: { newValue in
                     localValue = newValue
                     debugProvider?.setOverride(for: feature, value: .double(newValue))
-                    service.triggerUpdate()
                 }
             ), format: .number)
             .textFieldStyle(.roundedBorder)
@@ -215,7 +211,6 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
-                    service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
@@ -248,7 +243,7 @@ private struct StringEditor<F: FeatureFlagKey>: View {
     }
 
     private var resolvedValue: String {
-        service.stringValue(for: feature)
+        service.rawValue(for: feature).stringValue ?? defaultValue
     }
 
     var body: some View {
@@ -258,7 +253,6 @@ private struct StringEditor<F: FeatureFlagKey>: View {
                 set: { newValue in
                     localValue = newValue
                     debugProvider?.setOverride(for: feature, value: .string(newValue))
-                    service.triggerUpdate()
                 }
             ))
             .textFieldStyle(.roundedBorder)
@@ -267,7 +261,6 @@ private struct StringEditor<F: FeatureFlagKey>: View {
                 Button(action: {
                     localValue = defaultValue
                     debugProvider?.setOverride(for: feature, value: nil)
-                    service.triggerUpdate()
                 }) {
                     Image(systemName: "arrow.counterclockwise")
                 }
