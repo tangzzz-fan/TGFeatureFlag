@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`TypedFeatureFlag`**: keys carry their value type, so `value(for:)` returns `Bool` / `String` / `Int` / `Double` directly and `isEnabled` only compiles for `Bool` keys. Reading a string flag as a boolean is now a compile error instead of a silent fallback. `rawValue(for:)` remains as the untyped escape hatch for tooling.
+- **`RemoteRolloutProvider`** and **`RolloutConfiguration`**: rollout percentages come from a backend document, so moving a rollout from 5% to 50% no longer needs a release. The document accepts bare JSON literals; malformed entries are skipped and reported in `ignoredKeys` instead of failing the whole payload.
+- **`FeatureFlagEvent`** / **`FeatureFlagEventSink`** / `FeatureFlagEventOptions`: typed events for resolution, exposure, type mismatch and refresh outcomes, replacing `FeatureFlagLogger`. Exposure events are deduplicated per flag and value, with `startNewSession()` to begin a new reporting session.
+- **`LastKnownGoodStore`** and **`CachedSnapshotProvider`**: persist the last successfully refreshed snapshot and prime the provider chain from disk at launch, so a cold start renders the values the app actually had last session instead of shipped defaults. `load()` never throws — a missing or corrupt file returns `nil` and the app falls back to defaults.
+- **`FeatureFlagChangePublishing`**, **`FeatureFlagChangeBroadcaster`** and `FeatureFlagChangeObservation`: a fan-out change-notification mechanism providers can adopt. Fan-out rather than `AsyncStream`, which is single-consumer and would make two resolvers compete for elements.
+- **`FeatureFlagRefreshReport`**: per-provider refresh outcome and duration.
+- **`TGFeatureFlagCore` / `TGFeatureFlagSwiftUI` products.** `TGFeatureFlagCore` contains no SwiftUI, so "the core does not depend on the UI" is now a compile-time fact rather than a documentation rule. `TGFeatureFlag` remains as an umbrella that re-exports both, so existing `import TGFeatureFlag` call sites keep compiling.
+
+### Fixed
+- **Observer leak in `FeatureFlagService`**: the `UserDefaults` observer was registered with the block-based API but removed with `removeObserver(self)`, which only removes selector-based registrations. The closure therefore outlived every service instance for the lifetime of the process. The registration token is now owned by a helper that unregisters on `deinit`.
+- **Tautological hash test**: the "Fixed FNV-1a vector" assertion compared the hash against itself, so any change to the hash would still have passed. Replaced with pinned constants.
+
+### Changed
+- **`FeatureFlagService` is now a shell over `FeatureFlagResolver`.** It no longer keeps a second copy of the provider list or a parallel implementation of `register` / `setLogger` / `refresh` / `provider(ofType:)`, so the two modes can no longer drift apart and "one source of truth" is a structural property instead of a documentation rule.
+- **Providers publish their own changes.** `FeatureFlagChangePublishing` + `FeatureFlagChangeBroadcaster` let `DebugProvider` and `RolloutProvider` invalidate observers when their values change, so the UI no longer depends on callers remembering to call `triggerUpdate()`.
+- **`RolloutProvider.userId` is settable** and notifies on change. Identity is no longer frozen at construction, so signing in or switching accounts re-buckets instead of silently keeping the previous user's assignment.
+- **One `FeatureGate` for both modes** — it takes either `snapshot:` or the environment service. `SnapshotFeatureGate` is gone. An explicit snapshot wins over the environment service, because preferring the service would reintroduce the second source of truth.
+- **`FeatureGate` degrades instead of trapping** when neither a snapshot nor a service is present: it falls back to the flag default and reports the mistake via `assertionFailure` in debug builds.
+- **`refresh()` runs providers concurrently** and applies a per-provider timeout, so one slow source no longer delays or blocks the others.
+- **`refresh()` returns `FeatureFlagRefreshReport`** (per-provider result and duration) instead of a failure count, so callers can tell "network down" apart from "credentials expired".
+- **`FeatureFlagSnapshot.values` is read-only** — a dispatched snapshot can no longer be mutated underneath the Store.
+- **Snapshot JSON is explicit and tagged** (`{"type":"bool","value":true}`) instead of the compiler-synthesised `{"bool":{"_0":true}}`. Integral doubles such as `.double(1.0)` now round-trip as doubles rather than collapsing to integers.
+- **`FeatureFlagService(observeUserDefaults:)`** — observing `UserDefaults` is opt-in and off by default, because the notification is process-wide and short-lived instances should not register observers.
+- **Docs**: documented the priority tie-break rule, the pinned rollout hash vectors, and the snapshot wire format.
+
+### Breaking
+- `value(for:)` now returns the key's declared type and requires `TypedFeatureFlag`; use `rawValue(for:)` for the old untyped behaviour.
+- `isEnabled` requires `F.Value == Bool`; `boolValue` / `stringValue` / `intValue` / `doubleValue` were removed in favour of typed `value(for:)`.
+- `FeatureFlagKey`'s `defaultValue` should be replaced by `typedDefaultValue` when adopting `TypedFeatureFlag`; the untyped default is derived automatically.
+- Mixed-type key enums must be split, because `TypedFeatureFlag.Value` is a single associated type.
+- `FeatureFlagLogger` was replaced by `FeatureFlagEventSink`; refresh outcomes are now typed events rather than `flag: "*"` with the error text inside the value field.
+- `refresh()` now `throws` and returns `FeatureFlagRefreshReport`; read `.failures` from the report. `CancellationError` propagates, provider failures do not.
+- `SnapshotFeatureGate` was removed; use `FeatureGate(_:snapshot:)` instead.
+- Snapshots persisted in the previous `{"bool":{"_0":true}}` shape will no longer decode.
+- `FeatureFlagService()` no longer observes `UserDefaults`; pass `observeUserDefaults: true` to keep the old behaviour.
+- `RolloutProvider.userId` is no longer a `let`; code that relied on it being fixed now observes identity changes.
+
 ## [0.5.0] - 2026-08-25
 
 ### Added
