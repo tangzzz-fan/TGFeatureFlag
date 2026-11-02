@@ -190,6 +190,12 @@ xcrun simctl launch EF7E1C12-433F-4DD3-A6FA-017D75E12F52 com.tango.TGFeatureFlag
 com.tango.TGFeatureFlagDemo: 77502
 ```
 
+要直接打开调试页（跳过导航点击，便于截图取证），追加 `-debug-flags` 参数：
+
+```bash
+xcrun simctl launch EF7E1C12-433F-4DD3-A6FA-017D75E12F52 com.tango.TGFeatureFlagDemo -debug-flags
+```
+
 ### 3.6 截图取证
 
 ```bash

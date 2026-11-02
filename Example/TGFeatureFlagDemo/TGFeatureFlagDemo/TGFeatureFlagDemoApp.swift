@@ -74,8 +74,23 @@ struct TGFeatureFlagDemoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            root
                 .featureFlagService(service)
+        }
+    }
+
+    /// Launch with `-debug-flags` to open the debug screen directly.
+    ///
+    /// Exists so the screen can be built and screenshotted from the command line (see
+    /// `simulator-debugging-playbook.md`) without tapping through the navigation stack.
+    @ViewBuilder
+    private var root: some View {
+        if ProcessInfo.processInfo.arguments.contains("-debug-flags") {
+            NavigationStack {
+                FeatureFlagDebugView<DemoFeature>()
+            }
+        } else {
+            ContentView()
         }
     }
 }

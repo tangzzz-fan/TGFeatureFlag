@@ -98,6 +98,7 @@ struct TGFFFetchingAdapter: FeatureFlagFetching {
 - 非 Redux：`FeatureGate` + `.featureFlagService(_:)`。
 - Redux：`FeatureGate(feature, snapshot:)`，snapshot 来自 Store。
 - 同一个 `FeatureGate` 支持两种来源；显式传入的 snapshot 优先于环境 Service。
+- 调试页 `FeatureFlagDebugView` 同样支持两种来源：Service 模式编辑写入 `DebugProvider`；Redux 模式传 `snapshot: overriddenKeys: onOverride:`，由 App 决定覆盖如何进入 Store（回调收到 `(lookupKey, value)`，`nil` 表示清除覆盖）。显式 snapshot 优先于环境 Service，与 `FeatureGate` 一致；两者皆无时降级为提示而不是 trap。
 - 模块划分：`TGFeatureFlagCore`（解析/Provider/Snapshot，**不依赖 SwiftUI**）+ `TGFeatureFlagSwiftUI`（Gate / 调试页）+ `TGFeatureFlag`（聚合再导出）。Core 不依赖 UI 是编译期事实，不是文档约定。
 
 ---

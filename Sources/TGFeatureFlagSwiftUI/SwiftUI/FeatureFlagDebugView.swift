@@ -1,135 +1,241 @@
 import SwiftUI
 import TGFeatureFlagCore
 
-/// A debug view to view and toggle feature flags at runtime.
+/// A debug screen listing every flag with an editor for its current value.
+///
+/// Two sources, mirroring the two supported modes:
+///
+/// - **Snapshot** (Redux / Store-as-SoT): pass the snapshot the Store holds plus an
+///   `onOverride` callback. The screen never writes state itself; the app decides what an
+///   override means for its Store.
+/// - **Service** (non-Redux): inject `FeatureFlagService` with `.featureFlagService(_:)` and
+///   omit the snapshot. Edits go into the registered `DebugProvider`.
+///
+/// An explicit snapshot wins over the environment service — the same precedence `FeatureGate`
+/// uses. With neither source the screen explains the mistake instead of trapping, so a debug
+/// screen can no longer crash the app it was meant to debug.
 public struct FeatureFlagDebugView<F: FeatureFlagKey & CaseIterable>: View {
-    @Environment(FeatureFlagService.self) private var service
+    @Environment(\.featureFlagService) private var service
 
-    private var debugProvider: DebugProvider? {
-        service.provider(ofType: DebugProvider.self)
+    private let snapshot: FeatureFlagSnapshot?
+    private let overriddenKeys: Set<String>
+    private let onOverride: FeatureFlagOverrideHandler?
+
+    /// Service-driven screen, for non-Redux apps.
+    public init() {
+        self.snapshot = nil
+        self.overriddenKeys = []
+        self.onOverride = nil
     }
 
-    public init() {}
+    /// Snapshot-driven screen, for Redux apps.
+    ///
+    /// - Parameters:
+    ///   - snapshot: The snapshot held by the Store.
+    ///   - overriddenKeys: Keys the app currently treats as overridden. A snapshot is a
+    ///     resolved result, so it cannot say whether a value came from an override; the app
+    ///     supplies that fact rather than the screen guessing.
+    ///   - onOverride: Receives `(lookupKey, value)`; `nil` clears the override.
+    public init(
+        snapshot: FeatureFlagSnapshot,
+        overriddenKeys: Set<String> = [],
+        onOverride: @escaping FeatureFlagOverrideHandler
+    ) {
+        self.snapshot = snapshot
+        self.overriddenKeys = overriddenKeys
+        self.onOverride = onOverride
+    }
+
+    private var hasSource: Bool { snapshot != nil || service != nil }
+
+    private var debugProvider: DebugProvider? { service?.provider(ofType: DebugProvider.self) }
+
+    private var canResetAll: Bool { debugProvider != nil || !overriddenKeys.isEmpty }
 
     public var body: some View {
         List {
-            Section("Feature Flags") {
-                ForEach(Array(F.allCases), id: \.self) { feature in
-                    FlagRow(feature: feature, debugProvider: debugProvider)
-                }
-            }
-
-            if let provider = debugProvider {
-                Section {
-                    Button("Reset All Overrides") {
-                        provider.reset()
+            if hasSource {
+                Section("Feature Flags") {
+                    ForEach(Array(F.allCases), id: \.self) { feature in
+                        FlagRow(
+                            feature: feature,
+                            model: model(for: feature),
+                            onEdit: { apply($0, to: feature) }
+                        )
                     }
-                    .foregroundStyle(.red)
+                }
+
+                if canResetAll {
+                    Section {
+                        Button("Reset All Overrides") { resetAll() }
+                            .foregroundStyle(.red)
+                    }
                 }
             } else {
-                Text("No DebugProvider registered.")
+                Section {
+                    Text(
+                        """
+                        No flag source. Pass `snapshot:` or apply \
+                        `.featureFlagService(_:)` at the root of the hierarchy.
+                        """
+                    )
                     .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Feature Flags")
+    }
+
+    private func model(for feature: F) -> FeatureFlagDebugEditorModel {
+        FeatureFlagDebugEditorModel(
+            defaultValue: feature.defaultValue,
+            resolved: FeatureFlagDebugResolution.value(
+                for: feature,
+                snapshot: snapshot,
+                service: service
+            ),
+            isOverridden: FeatureFlagDebugResolution.isOverridden(
+                for: feature,
+                overriddenKeys: overriddenKeys,
+                debugProvider: debugProvider
+            )
+        )
+    }
+
+    /// A snapshot plus its callback owns the write path; otherwise the edit lands in the
+    /// `DebugProvider` the service resolved.
+    private func apply(_ value: FeatureFlagValue?, to feature: F) {
+        if let onOverride {
+            onOverride(feature.lookupKey, value)
+        } else {
+            debugProvider?.setOverride(for: feature, value: value)
+        }
+    }
+
+    private func resetAll() {
+        if let debugProvider {
+            debugProvider.reset()
+            return
+        }
+        // Sorted so a bulk reset dispatches in a stable order, which keeps snapshot
+        // assertions deterministic in tests.
+        for key in overriddenKeys.sorted() {
+            onOverride?(key, nil)
+        }
     }
 }
 
 private struct FlagRow<F: FeatureFlagKey>: View {
     let feature: F
-    let debugProvider: DebugProvider?
-    @Environment(FeatureFlagService.self) private var service
+    let model: FeatureFlagDebugEditorModel
+    let onEdit: (FeatureFlagValue?) -> Void
 
     var body: some View {
-        VStack(alignment: .leading) {
-            HStack {
-                VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(feature.description)
                         .font(.headline)
                     Text(feature.lookupKey)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
                 Spacer()
 
-                if debugProvider?.value(for: feature.lookupKey) != nil {
+                if model.isOverridden {
                     Image(systemName: "pencil.circle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityLabel("Overridden")
                 }
             }
 
-            switch feature.defaultValue {
-            case .bool(let boolDefault):
-                BoolEditor(feature: feature, defaultValue: boolDefault, debugProvider: debugProvider)
-            case .string(let stringDefault):
-                StringEditor(feature: feature, defaultValue: stringDefault, debugProvider: debugProvider)
-            case .int(let intDefault):
-                IntEditor(feature: feature, defaultValue: intDefault, debugProvider: debugProvider)
-            case .double(let doubleDefault):
-                DoubleEditor(feature: feature, defaultValue: doubleDefault, debugProvider: debugProvider)
+            if model.hasTypeMismatch {
+                Label(
+                    "Stored \(model.currentValueDescription) does not match the declared type.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            switch model.kind {
+            case .bool:
+                BoolEditor(model: model, onEdit: onEdit)
+            case .string:
+                StringEditor(model: model, onEdit: onEdit)
+            case .int:
+                IntEditor(model: model, onEdit: onEdit)
+            case .double:
+                DoubleEditor(model: model, onEdit: onEdit)
             }
         }
         .padding(.vertical, 4)
     }
 }
 
-private struct BoolEditor<F: FeatureFlagKey>: View {
-    let feature: F
-    let defaultValue: Bool
-    let debugProvider: DebugProvider?
-    @Environment(FeatureFlagService.self) private var service
+/// Shared reset affordance: writes `nil` so the flag falls through to the next provider
+/// rather than pinning it to the default — the two are only the same value when nothing else
+/// supplies one.
+private struct ResetButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.counterclockwise")
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Reset override")
+    }
+}
+
+private struct BoolEditor: View {
+    let model: FeatureFlagDebugEditorModel
+    let onEdit: (FeatureFlagValue?) -> Void
     @State private var localValue: Bool
 
-    init(feature: F, defaultValue: Bool, debugProvider: DebugProvider?) {
-        self.feature = feature
-        self.defaultValue = defaultValue
-        self.debugProvider = debugProvider
-        _localValue = State(initialValue: defaultValue)
-    }
-
-    private var resolvedValue: Bool {
-        service.rawValue(for: feature).boolValue ?? defaultValue
+    init(model: FeatureFlagDebugEditorModel, onEdit: @escaping (FeatureFlagValue?) -> Void) {
+        self.model = model
+        self.onEdit = onEdit
+        _localValue = State(initialValue: model.currentValue.boolValue ?? false)
     }
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { localValue },
-            set: { newValue in
-                localValue = newValue
-                debugProvider?.setOverride(for: feature, value: .bool(newValue))
+        HStack {
+            Toggle(isOn: Binding(
+                get: { localValue },
+                set: { newValue in
+                    localValue = newValue
+                    onEdit(.bool(newValue))
+                }
+            )) {
+                Text(localValue ? "ON" : "OFF")
+                    .bold()
+                    .foregroundStyle(localValue ? .green : .red)
             }
-        )) {
-            Text(localValue ? "ON" : "OFF")
-                .bold()
-                .foregroundStyle(localValue ? .green : .red)
-        }
-        .onAppear {
-            localValue = resolvedValue
-        }
-        .onChange(of: resolvedValue) { _, newValue in
-            if localValue != newValue {
-                localValue = newValue
+
+            if model.isOverridden {
+                ResetButton {
+                    localValue = model.defaultValue.boolValue ?? localValue
+                    onEdit(nil)
+                }
             }
+        }
+        .onChange(of: model.currentValue) { _, _ in
+            localValue = model.currentValue.boolValue ?? localValue
         }
     }
 }
 
-private struct IntEditor<F: FeatureFlagKey>: View {
-    let feature: F
-    let defaultValue: Int
-    let debugProvider: DebugProvider?
-    @Environment(FeatureFlagService.self) private var service
+private struct IntEditor: View {
+    let model: FeatureFlagDebugEditorModel
+    let onEdit: (FeatureFlagValue?) -> Void
     @State private var localValue: Int
 
-    init(feature: F, defaultValue: Int, debugProvider: DebugProvider?) {
-        self.feature = feature
-        self.defaultValue = defaultValue
-        self.debugProvider = debugProvider
-        _localValue = State(initialValue: defaultValue)
-    }
-
-    private var resolvedValue: Int {
-        service.rawValue(for: feature).intValue ?? defaultValue
+    init(model: FeatureFlagDebugEditorModel, onEdit: @escaping (FeatureFlagValue?) -> Void) {
+        self.model = model
+        self.onEdit = onEdit
+        _localValue = State(initialValue: model.currentValue.intValue ?? 0)
     }
 
     var body: some View {
@@ -138,7 +244,7 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: .int(newValue))
+                    onEdit(.int(newValue))
                 }
             )) {
                 HStack {
@@ -150,42 +256,28 @@ private struct IntEditor<F: FeatureFlagKey>: View {
                 }
             }
 
-            if debugProvider?.value(for: feature.lookupKey) != nil {
-                Button(action: {
-                    localValue = defaultValue
-                    debugProvider?.setOverride(for: feature, value: nil)
-                }) {
-                    Image(systemName: "arrow.counterclockwise")
+            if model.isOverridden {
+                ResetButton {
+                    localValue = model.defaultValue.intValue ?? localValue
+                    onEdit(nil)
                 }
             }
         }
-        .onAppear {
-            localValue = resolvedValue
-        }
-        .onChange(of: resolvedValue) { _, newValue in
-            if localValue != newValue {
-                localValue = newValue
-            }
+        .onChange(of: model.currentValue) { _, _ in
+            localValue = model.currentValue.intValue ?? localValue
         }
     }
 }
 
-private struct DoubleEditor<F: FeatureFlagKey>: View {
-    let feature: F
-    let defaultValue: Double
-    let debugProvider: DebugProvider?
-    @Environment(FeatureFlagService.self) private var service
+private struct DoubleEditor: View {
+    let model: FeatureFlagDebugEditorModel
+    let onEdit: (FeatureFlagValue?) -> Void
     @State private var localValue: Double
 
-    init(feature: F, defaultValue: Double, debugProvider: DebugProvider?) {
-        self.feature = feature
-        self.defaultValue = defaultValue
-        self.debugProvider = debugProvider
-        _localValue = State(initialValue: defaultValue)
-    }
-
-    private var resolvedValue: Double {
-        service.rawValue(for: feature).doubleValue ?? defaultValue
+    init(model: FeatureFlagDebugEditorModel, onEdit: @escaping (FeatureFlagValue?) -> Void) {
+        self.model = model
+        self.onEdit = onEdit
+        _localValue = State(initialValue: model.currentValue.doubleValue ?? 0)
     }
 
     var body: some View {
@@ -194,7 +286,7 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: .double(newValue))
+                    onEdit(.double(newValue))
                 }
             ), format: .number)
             .textFieldStyle(.roundedBorder)
@@ -207,43 +299,28 @@ private struct DoubleEditor<F: FeatureFlagKey>: View {
                 .monospacedDigit()
                 .frame(minWidth: 60, alignment: .trailing)
 
-            if debugProvider?.value(for: feature.lookupKey) != nil {
-                Button(action: {
-                    localValue = defaultValue
-                    debugProvider?.setOverride(for: feature, value: nil)
-                }) {
-                    Image(systemName: "arrow.counterclockwise")
+            if model.isOverridden {
+                ResetButton {
+                    localValue = model.defaultValue.doubleValue ?? localValue
+                    onEdit(nil)
                 }
             }
         }
-        .onAppear {
-            localValue = resolvedValue
-        }
-        .onChange(of: resolvedValue) { _, newValue in
-            if localValue != newValue {
-                localValue = newValue
-            }
+        .onChange(of: model.currentValue) { _, _ in
+            localValue = model.currentValue.doubleValue ?? localValue
         }
     }
 }
 
-private struct StringEditor<F: FeatureFlagKey>: View {
-    let feature: F
-    let defaultValue: String
-    let debugProvider: DebugProvider?
-    @Environment(FeatureFlagService.self) private var service
-
+private struct StringEditor: View {
+    let model: FeatureFlagDebugEditorModel
+    let onEdit: (FeatureFlagValue?) -> Void
     @State private var localValue: String
 
-    init(feature: F, defaultValue: String, debugProvider: DebugProvider?) {
-        self.feature = feature
-        self.defaultValue = defaultValue
-        self.debugProvider = debugProvider
-        _localValue = State(initialValue: defaultValue)
-    }
-
-    private var resolvedValue: String {
-        service.rawValue(for: feature).stringValue ?? defaultValue
+    init(model: FeatureFlagDebugEditorModel, onEdit: @escaping (FeatureFlagValue?) -> Void) {
+        self.model = model
+        self.onEdit = onEdit
+        _localValue = State(initialValue: model.currentValue.stringValue ?? "")
     }
 
     var body: some View {
@@ -252,27 +329,20 @@ private struct StringEditor<F: FeatureFlagKey>: View {
                 get: { localValue },
                 set: { newValue in
                     localValue = newValue
-                    debugProvider?.setOverride(for: feature, value: .string(newValue))
+                    onEdit(.string(newValue))
                 }
             ))
             .textFieldStyle(.roundedBorder)
 
-            if debugProvider?.value(for: feature.lookupKey) != nil {
-                Button(action: {
-                    localValue = defaultValue
-                    debugProvider?.setOverride(for: feature, value: nil)
-                }) {
-                    Image(systemName: "arrow.counterclockwise")
+            if model.isOverridden {
+                ResetButton {
+                    localValue = model.defaultValue.stringValue ?? localValue
+                    onEdit(nil)
                 }
             }
         }
-        .onAppear {
-            localValue = resolvedValue
-        }
-        .onChange(of: resolvedValue) { _, newValue in
-            if localValue != newValue {
-                localValue = newValue
-            }
+        .onChange(of: model.currentValue) { _, _ in
+            localValue = model.currentValue.stringValue ?? localValue
         }
     }
 }
