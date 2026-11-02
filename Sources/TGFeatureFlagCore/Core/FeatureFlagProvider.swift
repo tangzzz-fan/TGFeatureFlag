@@ -34,13 +34,3 @@ public enum FeatureFlagPriority: Sendable, Equatable {
         }
     }
 }
-
-/// Protocol for logging feature flag resolution events.
-public protocol FeatureFlagLogger: Sendable {
-    /// Called when a feature flag value is resolved.
-    /// - Parameters:
-    ///   - flag: The lookup key of the feature flag.
-    ///   - provider: The name of the provider that resolved it, or `nil` if using default.
-    ///   - value: The resolved value, or `nil` if unavailable.
-    func log(flag: String, resolvedBy provider: String?, value: FeatureFlagValue?)
-}
