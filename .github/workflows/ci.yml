@@ -16,6 +16,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Warnings are not cosmetic in this package: an unused observer or a dropped `await` is a
+  # behaviour change. Fail the build instead of letting it reach a release.
+  SWIFT_STRICT_FLAGS: "-Xswiftc -warnings-as-errors"
+  COVERAGE_FLOOR: "65"
+
 jobs:
   build-and-test:
     name: Build and Test
@@ -34,7 +40,47 @@ jobs:
         run: swift package resolve
 
       - name: Build package
-        run: swift build
+        run: swift build $SWIFT_STRICT_FLAGS
 
-      - name: Run test suite
-        run: swift test
+      - name: Run test suite with coverage
+        run: swift test --enable-code-coverage $SWIFT_STRICT_FLAGS
+
+      - name: Report coverage
+        run: |
+          set -euo pipefail
+          BIN=$(ls -d .build/debug/*.xctest/Contents/MacOS/* | head -1)
+          PROFILE=.build/debug/codecov/default.profdata
+
+          xcrun llvm-cov report "$BIN" \
+            -instr-profile="$PROFILE" \
+            -ignore-filename-regex='Tests|\.build'
+
+          xcrun llvm-cov export "$BIN" \
+            -instr-profile="$PROFILE" \
+            -ignore-filename-regex='Tests|\.build' \
+            -summary-only > coverage.json
+
+      - name: Enforce coverage floor
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          totals = json.load(open("coverage.json"))["data"][0]["totals"]
+          floor = float(os.environ["COVERAGE_FLOOR"])
+
+          lines = totals["lines"]["percent"]
+          regions = totals["regions"]["percent"]
+          functions = totals["functions"]["percent"]
+
+          print(
+              f"lines {lines:.2f}% | regions {regions:.2f}% | functions {functions:.2f}% "
+              f"(floor {floor:.2f}% lines)"
+          )
+
+          if lines < floor:
+              print(f"::error::Line coverage {lines:.2f}% is below the {floor:.2f}% floor")
+              sys.exit(1)
+          PY

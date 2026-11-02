@@ -14,3 +14,6 @@ docs/
 # local agent session memory
 .workbuddy-ai/
 .workbuddy/
+
+# coverage report written by CI and by local `llvm-cov export`
+coverage.json

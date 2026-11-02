@@ -87,7 +87,7 @@ struct TGFFFetchingAdapter: FeatureFlagFetching {
 4. **稳定灰度**：`RolloutProvider` 使用 FNV-1a（UTF-8）；0% 返回 `.bool(false)`，不穿透下层。哈希值已被测试用固定向量钉住——改动等于给全体用户重新分桶，必须是有意为之。
 5. **优先级平局**：同优先级时**先注册者胜**。注册顺序只用于破平局，永不越过优先级；该契约有测试保护。
 6. **清理僵尸开关**：设过期约定，避免长期交叉依赖。
-7. **远程驱动灰度**：百分比来自下发文档（`RemoteRolloutProvider`），改灰度不发版；文档整体替换，不在文档里的 flag 停止灰度而不是沿用旧百分比。
+7. **远程驱动灰度**：百分比来自下发文档（`RemoteRolloutProvider`），改灰度不发版；文档整体替换，不在文档里的 flag 停止灰度而不是沿用旧百分比。`value` 支持裸字面量，但整数值（`1.0`、`1e3`）一律解为 `int`——`Double` 开关请用带标签形式 `{"type":"double","value":1.0}` 或非整数（如 `1.5`），否则类型不匹配会回落到默认值并上报 `typeMismatch`。
 8. **可观测性**：用 `FeatureFlagEventSink` 收事件。曝光按「会话 + flag + 值」去重，每次会话只报一次；`.resolutions` 每次读取都触发，只在调试时开。
 9. **冷启动不闪变**：`LastKnownGoodStore` 持久化上次成功快照，启动先喂给 provider 链（远程之下、默认之上）。
 

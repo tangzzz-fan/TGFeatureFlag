@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Bare-literal decoding is pinned by tests**, including the two places where a hand-written payload cannot mean what it looks like: `1.0` and `1e3` decode as integers (`JSONDecoder` erases the decimal point), and integers beyond `Int.max` fall back to a double. A `Double` flag fed `{"value": 1.0}` therefore resolves as a mismatch and runs on its default — emit the tagged form or a non-integral value instead.
+- **CI gates**: the workflow builds with `-warnings-as-errors`, runs tests with coverage, prints the per-file table and fails below a 65% line-coverage floor.
+
 ## [1.0.0] - 2026-11-02
 
 ### Added

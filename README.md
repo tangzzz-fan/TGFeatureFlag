@@ -82,7 +82,7 @@ Two things need a decision rather than a rename:
 
 ## Continuous Integration
 
-GitHub Actions runs `swift build` and `swift test` for pushes and PRs targeting `main`.
+GitHub Actions builds with `-warnings-as-errors` and runs `swift test --enable-code-coverage` for pushes and PRs targeting `main`. The job prints the per-file coverage table and fails below a 65% line-coverage floor, so a regression is caught in CI rather than in a release.
 
 ## Usage
 
