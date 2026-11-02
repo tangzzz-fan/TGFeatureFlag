@@ -37,13 +37,14 @@ Reducer projects → Views read Store (not Environment Service)
 - **Change notification**: providers publish their own changes, so the UI updates without manual triggers.
 - **Observability**: typed events, with exposure events deduplicated per session.
 - **Grouping**: `FeatureFlagGroup` / `GroupedFeatureFlag` with unified `lookupKey`.
-- **SwiftUI**: one `FeatureGate` that takes either an injected snapshot or the environment service.
+- **SwiftUI**: one `FeatureGate` that takes either an injected snapshot or the environment service, and one `FeatureFlagDebugView` that works with either source too.
+- **Debug screen in Redux**: pass the Store's snapshot and an override callback, so the Store stays the only writer.
 
 ## Installation
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "0.5.0")
+    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "1.0.0")
 ]
 ```
 
@@ -56,6 +57,28 @@ The package ships three products:
 | `TGFeatureFlagSwiftUI` | Gates and the debug screen | You want the dependency to be explicit |
 
 `TGFeatureFlagCore` has no SwiftUI dependency, so linking the core half does not pull view code into an app extension or a background target.
+
+## Migrating from 0.5.0
+
+1.0.0 is a breaking release: typed keys replace untyped reads, and the logger became a typed event sink. The mechanical part:
+
+| 0.5.0 | 1.0.0 |
+|---|---|
+| `service.boolValue(for:)` / `stringValue` / `intValue` / `doubleValue` | `value(for:)`, on a key that adopts `TypedFeatureFlag` |
+| `key.defaultValue` | `typedDefaultValue` (the untyped `defaultValue` is derived) |
+| `FeatureFlagLogger` + `setLogger(_:)` | `FeatureFlagEventSink` + `setEventSink(_:options:)` |
+| `refresh() -> Int` (failure count) | `try await refresh() -> FeatureFlagRefreshReport` |
+| `SnapshotFeatureGate(_:snapshot:)` | `FeatureGate(_:snapshot:)` |
+| `FeatureFlagService()` observes `UserDefaults` | `FeatureFlagService(observeUserDefaults: true)` |
+| `RolloutProvider.userId` (constant) | settable; changing it re-buckets and notifies |
+| Mutating `snapshot.values` | read-only; resolve a new snapshot instead |
+
+Two things need a decision rather than a rename:
+
+- **Split mixed-type key enums.** `TypedFeatureFlag.Value` is a single associated type, so a boolean switch and a string configuration value cannot share an enum. Split them — they have nothing in common beyond both being "flags".
+- **Re-save cached snapshots.** Files written by 0.5.0 use the `{"bool":{"_0":true}}` shape and no longer decode. `LastKnownGoodStore.load()` returns `nil` for them, so the app falls back to defaults and rewrites the cache after the next successful refresh. Nothing crashes; the first launch after upgrading just loses the cold-start optimisation once.
+
+`FeatureFlagService` no longer registers a `UserDefaults` observer unless asked, and `refresh()` now throws `CancellationError` when the caller is cancelled — provider failures still come back in the report rather than as throws.
 
 ## Continuous Integration
 

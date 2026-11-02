@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-11-02
 
 ### Added
 - **`FeatureFlagDebugView` works in both modes.** Pass `snapshot:` with `onOverride:` to use it in Redux / Store-as-SoT apps — the explicit snapshot wins over the environment service, the same precedence `FeatureGate` applies, and edits reach the app as `(lookupKey, value)` calls (`nil` clears an override) instead of assuming a `DebugProvider`. The service-driven `init()` is unchanged. With neither source the screen explains the mistake instead of trapping. Row display rules live in a testable model; rows show a visible warning when a stored value's type does not match the key's declared type, and every editor gained a per-flag reset button.
@@ -143,5 +143,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed generic parameter inference issues in SwiftUI views.
 - Fixed layout occlusion issues in Product Detail page when navigation bar is hidden.
 
+[1.0.0]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/1.0.0
 [0.5.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/0.0.1...0.5.0
 [0.0.1]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/0.0.1
