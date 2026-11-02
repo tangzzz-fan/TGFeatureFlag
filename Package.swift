@@ -12,18 +12,37 @@ let package = Package(
         .watchOS(.v10)
     ],
     products: [
+        // Umbrella product: everything, for callers that just want `import TGFeatureFlag`.
         .library(
             name: "TGFeatureFlag",
             targets: ["TGFeatureFlag"]
         ),
+        // Resolution, providers and snapshots — no SwiftUI.
+        .library(
+            name: "TGFeatureFlagCore",
+            targets: ["TGFeatureFlagCore"]
+        ),
+        // Gates and the debug screen.
+        .library(
+            name: "TGFeatureFlagSwiftUI",
+            targets: ["TGFeatureFlagSwiftUI"]
+        ),
     ],
     targets: [
         .target(
-            name: "TGFeatureFlag"
+            name: "TGFeatureFlagCore"
+        ),
+        .target(
+            name: "TGFeatureFlagSwiftUI",
+            dependencies: ["TGFeatureFlagCore"]
+        ),
+        .target(
+            name: "TGFeatureFlag",
+            dependencies: ["TGFeatureFlagCore", "TGFeatureFlagSwiftUI"]
         ),
         .testTarget(
             name: "TGFeatureFlagTests",
-            dependencies: ["TGFeatureFlag"]
+            dependencies: ["TGFeatureFlag", "TGFeatureFlagCore", "TGFeatureFlagSwiftUI"]
         ),
     ],
     swiftLanguageModes: [.v6]
