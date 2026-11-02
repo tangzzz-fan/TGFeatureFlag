@@ -58,20 +58,30 @@ enum FeatureFlagResolution {
     /// non-optional rather than forcing every read to handle a shape the key says is impossible.
     /// The mismatch itself is reported, because a silent fallback here looks exactly like a flag
     /// that is simply switched off.
+    ///
+    /// One case is accepted rather than rejected: an integer read as a `Double`. The wire
+    /// format cannot tell `1` from `1.0`, so that payload is compatible, not broken — but it
+    /// still reports `valueWidened`, because a whole-number double is usually a backend that
+    /// meant `1` for a percentage rather than a double that happens to be integral.
     static func resolveTypedValue<F: TypedFeatureFlag>(
         for feature: F,
         providers: [ProviderEntry],
         events: FeatureFlagEventEmitter?
     ) -> F.Value {
         let raw = resolveValue(for: feature, providers: providers, events: events)
+        let expected = String(describing: F.Value.self)
 
         guard let typed = F.Value(featureFlagValue: raw) else {
             events?.typeMismatch(
                 flag: feature.lookupKey,
-                expected: String(describing: F.Value.self),
+                expected: expected,
                 actual: raw
             )
             return feature.typedDefaultValue
+        }
+
+        if F.Value.wideningDescription(of: raw) != nil {
+            events?.valueWidened(flag: feature.lookupKey, expected: expected, actual: raw)
         }
 
         return typed

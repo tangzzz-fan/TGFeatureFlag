@@ -5,8 +5,9 @@ import Testing
 /// The bare-literal decoding path.
 ///
 /// Backends write `{"value": true}` rather than the tagged form this library emits, so the
-/// decoder has to guess the case from JSON syntax. These tests pin the guesses — including
-/// two places where the guess cannot match what a hand-written payload meant.
+/// decoder has to guess the case from JSON syntax. These tests pin the guesses — including the
+/// two places where the guess does not survive the round trip: an integral literal written with
+/// a decimal point, and an integer beyond `Int.max`.
 @Suite("Bare literal decoding")
 struct ValueDecodingTests {
 
@@ -86,10 +87,9 @@ struct ValueDecodingTests {
     /// `JSONDecoder` erases the difference between `1`, `1.0` and `1e3`: all three arrive as
     /// an integer-valued number, so the decoder's Int-first order turns them all into `.int`.
     ///
-    /// Consequence: a payload that writes `{"value": 1.0}` for a `Double` flag resolves as
-    /// `.int(1)`, which then fails the typed read and falls back to the key's default (with a
-    /// `typeMismatch` event). Emit the tagged form, or a non-integral value such as `1.5`, when
-    /// the flag is a double.
+    /// A `Double` flag still resolves — the typed read widens an integer — but the stored case
+    /// is `int`, so anything that inspects the raw value (a `valueWidened` event, a debug row)
+    /// sees an integer where the payload said `1.0`.
     @Test("An integral literal written with a decimal point decodes as an integer")
     func integralLiteralLosesItsDecimalPoint() throws {
         #expect(try decode("1.0") == .int(1))
@@ -97,8 +97,8 @@ struct ValueDecodingTests {
         #expect(try decode("1e3") == .int(1000))
     }
 
-    @Test("A rollout payload inherits the limitation, and the typed read falls back")
-    func rolloutPayloadHitsTheSameLimit() throws {
+    @Test("A rollout payload inherits the limitation, and the typed read widens it")
+    func rolloutPayloadWidens() throws {
         enum Multiplier: String, TypedFeatureFlag {
             case factor = "config_factor"
             var typedDefaultValue: Double { 0.5 }
@@ -110,9 +110,9 @@ struct ValueDecodingTests {
         #expect(configuration.ignoredKeys.isEmpty)
         #expect(configuration["config_factor"]?.value == .int(1))
 
-        // The rollout is live, but the value cannot be read as the declared type, so the app
-        // runs on its default. This is the failure the limitation produces.
+        // The comma-separated decimal is gone, but the read no longer falls back to 0.5.
         let snapshot = FeatureFlagSnapshot(values: [Multiplier.factor.lookupKey: .int(1)])
-        #expect(snapshot.value(for: Multiplier.factor) == 0.5)
+        #expect(snapshot.value(for: Multiplier.factor) == 1.0)
+        #expect(snapshot.rawValue(for: Multiplier.factor) == .int(1))
     }
 }

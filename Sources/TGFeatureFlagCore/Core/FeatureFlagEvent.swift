@@ -20,6 +20,15 @@ public enum FeatureFlagEvent: Sendable, Equatable {
     /// A provider returned a value whose case does not match the key's declared type.
     case typeMismatch(flag: String, expected: String, actual: FeatureFlagValue)
 
+    /// A provider returned an integer where the key declares `Double`. The value is used,
+    /// widened — this is a notice, not a failure.
+    ///
+    /// Reported separately from `typeMismatch` because the two have opposite outcomes: a
+    /// mismatch falls back to the default, a widening resolves. Folding the widening into
+    /// `typeMismatch` would make every double flag read as misconfigured the moment a backend
+    /// writes `{"value": 1}`.
+    case valueWidened(flag: String, expected: String, actual: FeatureFlagValue)
+
     /// A provider refreshed successfully.
     case refreshed(provider: String, duration: Duration)
 
@@ -59,7 +68,9 @@ public struct FeatureFlagEventOptions: OptionSet, Sendable {
     /// Provider refresh outcomes.
     public static let refresh = FeatureFlagEventOptions(rawValue: 1 << 2)
 
-    /// Values whose case does not match the key's declared type.
+    /// A provider returned a value whose case does not match the key's declared type.
+    ///
+    /// Includes the values it accepted anyway by widening an integer to a `Double`.
     public static let typeMismatches = FeatureFlagEventOptions(rawValue: 1 << 3)
 
     /// Exposures, refresh outcomes and type mismatches.
@@ -111,6 +122,11 @@ struct FeatureFlagEventEmitter: Sendable {
     func typeMismatch(flag: String, expected: String, actual: FeatureFlagValue) {
         guard options.contains(.typeMismatches) else { return }
         sink.receive(.typeMismatch(flag: flag, expected: expected, actual: actual))
+    }
+
+    func valueWidened(flag: String, expected: String, actual: FeatureFlagValue) {
+        guard options.contains(.typeMismatches) else { return }
+        sink.receive(.valueWidened(flag: flag, expected: expected, actual: actual))
     }
 
     func refreshed(provider: String, duration: Duration) {

@@ -276,6 +276,8 @@ try remote.apply(json: payload)   // operators moving 5% → 50% no longer ship 
 
 `value` accepts a bare literal (`true`, `3`, `"text"`, `1.5`) so the document is writable by hand. Applying a document replaces the whole rollout set — a flag that disappears from the payload stops rolling out instead of keeping its last percentage. Malformed entries are skipped and listed in `ignoredKeys` rather than failing the entire document.
 
+One asymmetry is worth knowing: `JSONDecoder` erases the decimal point, so `1.0`, `1e3` and `1` all arrive as integers. A `Double` flag therefore accepts an integer and widens it, reporting `valueWidened`; an `Int` flag still rejects `1.5` rather than truncating it. Keep integral configuration inside `Int`'s range — beyond it the literal decodes as a double and loses precision past 2^53.
+
 Changing the percentage at runtime republishes a change, so the UI updates without a restart. Changing `userId` re-buckets.
 
 ### 6. Cold start without a flash
@@ -309,6 +311,9 @@ final class MySink: FeatureFlagEventSink {
             analytics.recordExposure(flag: flag, value: value)
         case .typeMismatch(let flag, let expected, let actual):
             logger.warning("flag \(flag) expected \(expected), got \(actual)")
+        case .valueWidened(let flag, let expected, let actual):
+            // Accepted, not rejected: an integer read as a Double (see the rollout payload note).
+            logger.debug("flag \(flag): \(actual) widened to \(expected)")
         case .refreshFailed(let provider, let reason):
             logger.warning("\(provider) failed: \(reason)")
         case .refreshTimedOut(let provider):

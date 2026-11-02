@@ -22,7 +22,12 @@ struct FeatureFlagDebugEditorModel: Equatable {
 
     let kind: Kind
     /// The value the row edits: whatever resolved, or the default when nothing did.
+    ///
+    /// Normalised for the editor — an integer read as a `Double` is presented as that double,
+    /// so the double field seeds from `1.0` instead of falling back to `0`.
     let currentValue: FeatureFlagValue
+    /// What the source actually returned, before normalisation. Kept so a notice can quote it.
+    let storedValue: FeatureFlagValue
     let defaultValue: FeatureFlagValue
     let isOverridden: Bool
     /// A source returned a case the key does not declare — a stale remote value or a
@@ -30,14 +35,23 @@ struct FeatureFlagDebugEditorModel: Equatable {
     /// rather than silently swallowed, because a hidden mismatch looks exactly like a flag
     /// that is simply switched off.
     let hasTypeMismatch: Bool
+    /// An integer read as a `Double`. Resolves normally rather than falling back, so this is a
+    /// notice about the payload's shape, not an error.
+    let isWidened: Bool
 
     init(defaultValue: FeatureFlagValue, resolved: FeatureFlagValue?, isOverridden: Bool) {
         let kind = Self.kind(of: defaultValue)
+        let resolvedKind = resolved.map(Self.kind(of:))
+        let stored = resolved ?? defaultValue
+        let widened = kind == .double && resolvedKind == .int
+
         self.kind = kind
         self.defaultValue = defaultValue
-        self.currentValue = resolved ?? defaultValue
+        self.storedValue = stored
+        self.currentValue = widened ? Self.widened(stored) : stored
         self.isOverridden = isOverridden
-        self.hasTypeMismatch = resolved.map { Self.kind(of: $0) != kind } ?? false
+        self.isWidened = widened
+        self.hasTypeMismatch = resolvedKind.map { $0 != kind && !widened } ?? false
     }
 
     static func kind(of value: FeatureFlagValue) -> Kind {
@@ -49,11 +63,20 @@ struct FeatureFlagDebugEditorModel: Equatable {
         }
     }
 
+    /// Widens an integer into the double it stands for.
+    ///
+    /// `Double(Int)` is exact for every value in `Int`'s range up to 2^53 and rounds beyond
+    /// it, which matches what `JSONDecoder` already did when it handed the integer over.
+    private static func widened(_ value: FeatureFlagValue) -> FeatureFlagValue {
+        guard case .int(let value) = value else { return value }
+        return .double(Double(value))
+    }
+
     /// The value to write when the row is reset to the flag's default.
     var resetValue: FeatureFlagValue { defaultValue }
 
     /// The resolved value for a mismatch notice, quoted so an empty string stays visible.
-    var currentValueDescription: String { Self.literal(currentValue) }
+    var currentValueDescription: String { Self.literal(storedValue) }
 
     /// What the row reads at a glance.
     var displayText: String {

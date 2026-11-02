@@ -88,6 +88,36 @@ struct FeatureFlagDebugViewTests {
         #expect(model.isOverridden)
     }
 
+    @Test("An integer on a double flag is a notice, not a mismatch")
+    func integerOnDoubleFlagIsAWidenedNotice() {
+        // What a backend sends as {"value": 1} for a ratio.
+        let model = FeatureFlagDebugEditorModel(
+            defaultValue: .double(1.5),
+            resolved: .int(2),
+            isOverridden: false
+        )
+
+        #expect(model.isWidened)
+        #expect(model.hasTypeMismatch == false)
+        // Normalised so the double field seeds from 2.0 rather than 0.
+        #expect(model.currentValue == .double(2))
+        #expect(model.currentValueDescription == "2")
+        #expect(model.displayText == "2.00")
+    }
+
+    @Test("A double on an int flag stays a mismatch")
+    func doubleOnIntFlagStaysAMismatch() {
+        let model = FeatureFlagDebugEditorModel(
+            defaultValue: .int(3),
+            resolved: .double(1.5),
+            isOverridden: false
+        )
+
+        #expect(model.isWidened == false)
+        #expect(model.hasTypeMismatch)
+        #expect(model.currentValue == .double(1.5))
+    }
+
     // MARK: - Source precedence
 
     @Test("An explicit snapshot wins over the environment service")

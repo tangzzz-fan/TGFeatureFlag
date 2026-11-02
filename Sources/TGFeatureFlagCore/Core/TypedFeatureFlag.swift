@@ -10,6 +10,21 @@ public protocol FeatureFlagValueConvertible: Sendable, Equatable {
 
     /// Unwraps a stored value, or `nil` when the stored case does not match.
     init?(featureFlagValue: FeatureFlagValue)
+
+    /// Names the stored case this type accepted without an exact match, or `nil` when the
+    /// conversion was exact.
+    ///
+    /// Only `Double` widens, and only from `.int`. A JSON payload cannot distinguish `1` from
+    /// `1.0` — `JSONDecoder` erases the decimal point — so refusing `.int` would make
+    /// `{"value": 1}` fall back to the shipped default for a flag that is plainly a double.
+    /// The widening is one-directional on purpose: `Int` does not accept `.double`, because
+    /// truncating `1.5` to `1` would be a silent lossy read rather than a compatible one.
+    static func wideningDescription(of value: FeatureFlagValue) -> String?
+}
+
+public extension FeatureFlagValueConvertible {
+    /// Exact matches only, unless a conformer says otherwise.
+    static func wideningDescription(of value: FeatureFlagValue) -> String? { nil }
 }
 
 extension Bool: FeatureFlagValueConvertible {
@@ -42,9 +57,19 @@ extension Int: FeatureFlagValueConvertible {
 extension Double: FeatureFlagValueConvertible {
     public var featureFlagValue: FeatureFlagValue { .double(self) }
 
+    /// Accepts an integer as well, which the wire format forces: see
+    /// `wideningDescription(of:)`.
     public init?(featureFlagValue: FeatureFlagValue) {
-        guard case .double(let value) = featureFlagValue else { return nil }
-        self = value
+        switch featureFlagValue {
+        case .double(let value): self = value
+        case .int(let value): self = Double(value)
+        default: return nil
+        }
+    }
+
+    public static func wideningDescription(of value: FeatureFlagValue) -> String? {
+        guard case .int = value else { return nil }
+        return "Int"
     }
 }
 

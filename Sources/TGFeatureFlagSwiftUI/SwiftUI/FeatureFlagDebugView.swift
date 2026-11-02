@@ -159,6 +159,15 @@ private struct FlagRow<F: FeatureFlagKey>: View {
                 .foregroundStyle(.orange)
             }
 
+            if model.isWidened {
+                Label(
+                    "Stored \(model.currentValueDescription) as a Double.",
+                    systemImage: "arrow.left.arrow.right"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             switch model.kind {
             case .bool:
                 BoolEditor(model: model, onEdit: onEdit)

@@ -8,8 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Bare-literal decoding is pinned by tests**, including the two places where a hand-written payload cannot mean what it looks like: `1.0` and `1e3` decode as integers (`JSONDecoder` erases the decimal point), and integers beyond `Int.max` fall back to a double. A `Double` flag fed `{"value": 1.0}` therefore resolves as a mismatch and runs on its default — emit the tagged form or a non-integral value instead.
+- **`Double` flags accept an integer payload.** `JSONDecoder` erases the decimal point, so a backend writing `{"value": 1}` for a ratio produced `.int(1)`, which failed the typed read and silently ran the flag on its shipped default — indistinguishable from a flag that was switched off. The read now widens the integer, and reports a new `valueWidened` event so the shape of the payload is still visible. Widening is one-directional and `Double`-only: an `Int` flag still rejects `1.5` (truncating it would be a lossy read), and `1` is still not `true`.
+- **Bare-literal decoding is pinned by tests**, including the two places where a hand-written payload does not survive the round trip: `1.0` and `1e3` decode as integers (`JSONDecoder` erases the decimal point), and integers beyond `Int.max` fall back to a double. The first of those is now handled by the `Double` widening above; the second still rounds, so keep integral configuration values inside `Int` range.
 - **CI gates**: the workflow builds with `-warnings-as-errors`, runs tests with coverage, prints the per-file table and fails below a 65% line-coverage floor.
+
+### Changed
+- **`FeatureFlagEvent` gained `valueWidened`.** A `switch` over every case needs a branch for it (or a `default`) when you rebuild against 1.1. It shares the `.typeMismatches` option, so a sink that already reports type mismatches sees it without any configuration.
 
 ## [1.0.0] - 2026-11-02
 
