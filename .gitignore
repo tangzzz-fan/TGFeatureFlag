@@ -7,3 +7,9 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 docs/
+
+# local ticket tracker (to-tickets)
+.scratch/
+
+# local agent session memory
+.workbuddy-ai/
