@@ -34,13 +34,13 @@ struct ContentView: View {
 
                 Section("Configuration") {
                     LabeledContent("API Base URL") {
-                        Text(service.stringValue(for: DemoFeature.apiBaseURL))
+                        Text(service.value(for: DemoConfig.apiBaseURL))
                             .font(.caption)
                             .monospaced()
                             .multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Welcome Message") {
-                        Text(service.stringValue(for: DemoFeature.welcomeMessage))
+                        Text(service.value(for: DemoConfig.welcomeMessage))
                             .font(.caption)
                             .multilineTextAlignment(.trailing)
                     }
@@ -83,6 +83,20 @@ struct ContentView: View {
                     }
                 }
 
+                Section("Snapshot Mode (Redux path)") {
+                    FeatureGate(DemoFeature.socialTab, snapshot: snapshotFlags) {
+                        Text("Social tab is ON in the snapshot")
+                            .foregroundStyle(.green)
+                    } fallback: {
+                        Text("Social tab is OFF in the snapshot")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Same FeatureGate type, driven by a cold snapshot. In a Redux app the Store would own this snapshot instead of rebuilding it from the service.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Debug Tools") {
                     NavigationLink("Edit DemoFeature Overrides") {
                         FeatureFlagDebugView<DemoFeature>()
@@ -106,17 +120,36 @@ struct ContentView: View {
         }
     }
 
+    private var snapshotFlags: FeatureFlagSnapshot {
+        service.snapshot(for: DemoFeature.allCases)
+    }
+
     private func refreshRemoteConfig() {
         guard !isRefreshing else { return }
         isRefreshing = true
 
         Task { @MainActor in
-            let failures = await service.refresh()
-            lastRefreshSummary = failures == 0
-                ? "Remote config refreshed successfully"
-                : "Refresh completed with \(failures) failure(s)"
+            do {
+                let report = try await service.refresh()
+                lastRefreshSummary = summary(for: report)
+            } catch is CancellationError {
+                lastRefreshSummary = "Refresh cancelled"
+            } catch {
+                lastRefreshSummary = "Refresh failed: \(error)"
+            }
             isRefreshing = false
         }
+    }
+
+    private func summary(for report: FeatureFlagRefreshReport) -> String {
+        if report.outcomes.isEmpty {
+            return "No async providers registered"
+        }
+        if report.isSuccess {
+            return "Refreshed \(report.outcomes.count) provider(s)"
+        }
+        let failed = report.outcomes.filter { !$0.didRefresh }.map(\.providerName)
+        return "Partial refresh — failed: \(failed.joined(separator: ", "))"
     }
 }
 
