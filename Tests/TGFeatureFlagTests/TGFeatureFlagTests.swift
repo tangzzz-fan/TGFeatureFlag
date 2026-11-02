@@ -1,38 +1,48 @@
 import Testing
 import Foundation
 import os
-@testable import TGFeatureFlag
+@testable import TGFeatureFlagCore
 
 // Define test features
-enum TestFeature: String, FeatureFlagKey {
+// One value type per enum: `TypedFeatureFlag.Value` is an associated type, so boolean switches
+// and configuration values cannot share an enum.
+enum BoolTestFeature: String, TypedFeatureFlag {
     case booleanFeature = "test_bool"
-    case stringFeature = "test_string"
-    case intFeature = "test_int"
-
-    var defaultValue: FeatureFlagValue {
-        switch self {
-        case .booleanFeature: return .bool(false)
-        case .stringFeature: return .string("default")
-        case .intFeature: return .int(42)
-        }
-    }
+    var typedDefaultValue: Bool { false }
 }
 
-// Test logger for verifying resolution events
-final class TestLogger: FeatureFlagLogger, @unchecked Sendable {
-    struct LogEntry: Sendable {
-        let flag: String
-        let provider: String?
-        let value: FeatureFlagValue?
+enum StringTestFeature: String, TypedFeatureFlag {
+    case stringFeature = "test_string"
+    var typedDefaultValue: String { "default" }
+}
+
+enum IntTestFeature: String, TypedFeatureFlag {
+    case intFeature = "test_int"
+    var typedDefaultValue: Int { 42 }
+}
+
+// Test sink for verifying feature-flag events.
+final class TestEventSink: FeatureFlagEventSink, @unchecked Sendable {
+    private let storage = OSAllocatedUnfairLock(initialState: [FeatureFlagEvent]())
+
+    var events: [FeatureFlagEvent] { storage.withLock { $0 } }
+
+    var resolutions: [(flag: String, provider: String?, value: FeatureFlagValue)] {
+        events.compactMap { event in
+            guard case .resolved(let flag, let provider, let value) = event else { return nil }
+            return (flag, provider, value)
+        }
     }
 
-    var entries: [LogEntry] = []
-    private let lock = NSLock()
+    var exposures: [(flag: String, value: FeatureFlagValue)] {
+        events.compactMap { event in
+            guard case .exposure(let flag, let value) = event else { return nil }
+            return (flag, value)
+        }
+    }
 
-    func log(flag: String, resolvedBy provider: String?, value: FeatureFlagValue?) {
-        lock.lock()
-        defer { lock.unlock() }
-        entries.append(LogEntry(flag: flag, provider: provider, value: value))
+    func receive(_ event: FeatureFlagEvent) {
+        storage.withLock { $0.append(event) }
     }
 }
 
@@ -52,19 +62,19 @@ struct TGFeatureFlagTests {
     func priorityChain() {
         let debugProvider = DebugProvider()
         let localProvider = LocalProvider(flags: [
-            TestFeature.booleanFeature.lookupKey: .bool(true)
+            BoolTestFeature.booleanFeature.lookupKey: .bool(true)
         ])
 
         service.register(provider: debugProvider, priority: .highest)
         service.register(provider: localProvider, priority: .lowest)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
 
-        debugProvider.setOverride(for: TestFeature.booleanFeature, value: .bool(false))
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        debugProvider.setOverride(for: BoolTestFeature.booleanFeature, value: .bool(false))
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
 
-        debugProvider.setOverride(for: TestFeature.booleanFeature, value: nil)
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        debugProvider.setOverride(for: BoolTestFeature.booleanFeature, value: nil)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
     }
 
     // MARK: - Generic Value Tests
@@ -74,10 +84,10 @@ struct TGFeatureFlagTests {
         let debugProvider = DebugProvider()
         service.register(provider: debugProvider, priority: .highest)
 
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "default")
+        #expect(service.value(for: StringTestFeature.stringFeature) == "default")
 
-        debugProvider.setOverride(for: TestFeature.stringFeature, value: .string("overridden"))
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "overridden")
+        debugProvider.setOverride(for: StringTestFeature.stringFeature, value: .string("overridden"))
+        #expect(service.value(for: StringTestFeature.stringFeature) == "overridden")
     }
 
     @Test("Int Value Handling")
@@ -85,10 +95,10 @@ struct TGFeatureFlagTests {
         let debugProvider = DebugProvider()
         service.register(provider: debugProvider, priority: .highest)
 
-        #expect(service.intValue(for: TestFeature.intFeature) == 42)
+        #expect(service.value(for: IntTestFeature.intFeature) == 42)
 
-        debugProvider.setOverride(for: TestFeature.intFeature, value: .int(100))
-        #expect(service.intValue(for: TestFeature.intFeature) == 100)
+        debugProvider.setOverride(for: IntTestFeature.intFeature, value: .int(100))
+        #expect(service.value(for: IntTestFeature.intFeature) == 100)
     }
 
     // MARK: - UserDefaults Provider Tests
@@ -109,11 +119,11 @@ struct TGFeatureFlagTests {
         let provider = UserDefaultsProvider(userDefaults: userDefaults)
         service.register(provider: provider, priority: .highest)
 
-        userDefaults.set(true, forKey: TestFeature.booleanFeature.lookupKey)
-        userDefaults.set("persisted", forKey: TestFeature.stringFeature.lookupKey)
+        userDefaults.set(true, forKey: BoolTestFeature.booleanFeature.lookupKey)
+        userDefaults.set("persisted", forKey: StringTestFeature.stringFeature.lookupKey)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "persisted")
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
+        #expect(service.value(for: StringTestFeature.stringFeature) == "persisted")
     }
 }
 
@@ -129,35 +139,35 @@ struct EnhancementTests {
 
     @Test("Custom Priority Ordering")
     func customPriority() {
-        let lowProvider = LocalProvider(flags: [TestFeature.booleanFeature.lookupKey: .bool(false)])
-        let midProvider = LocalProvider(flags: [TestFeature.booleanFeature.lookupKey: .bool(true)])
-        let highProvider = LocalProvider(flags: [TestFeature.booleanFeature.lookupKey: .bool(false)])
+        let lowProvider = LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(false)])
+        let midProvider = LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(true)])
+        let highProvider = LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(false)])
 
         service.register(provider: lowProvider, priority: .custom(10))
         service.register(provider: highProvider, priority: .custom(100))
         service.register(provider: midProvider, priority: .custom(50))
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 
     @Test("Mixed Priority Levels")
     func mixedPriority() {
-        let highestProvider = LocalProvider(flags: [TestFeature.stringFeature.lookupKey: .string("highest")])
-        let customProvider = LocalProvider(flags: [TestFeature.stringFeature.lookupKey: .string("custom")])
-        let lowestProvider = LocalProvider(flags: [TestFeature.stringFeature.lookupKey: .string("lowest")])
+        let highestProvider = LocalProvider(flags: [StringTestFeature.stringFeature.lookupKey: .string("highest")])
+        let customProvider = LocalProvider(flags: [StringTestFeature.stringFeature.lookupKey: .string("custom")])
+        let lowestProvider = LocalProvider(flags: [StringTestFeature.stringFeature.lookupKey: .string("lowest")])
 
         service.register(provider: lowestProvider, priority: .lowest)
         service.register(provider: customProvider, priority: .custom(50))
         service.register(provider: highestProvider, priority: .highest)
 
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "highest")
+        #expect(service.value(for: StringTestFeature.stringFeature) == "highest")
     }
 
     @Test("Default Fallback with Empty Provider Chain")
     func emptyProviderChain() {
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "default")
-        #expect(service.intValue(for: TestFeature.intFeature) == 42)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
+        #expect(service.value(for: StringTestFeature.stringFeature) == "default")
+        #expect(service.value(for: IntTestFeature.intFeature) == 42)
     }
 
     @Test("DebugProvider Reset")
@@ -165,11 +175,11 @@ struct EnhancementTests {
         let debugProvider = DebugProvider()
         service.register(provider: debugProvider, priority: .highest)
 
-        debugProvider.setOverride(for: TestFeature.booleanFeature, value: .bool(true))
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        debugProvider.setOverride(for: BoolTestFeature.booleanFeature, value: .bool(true))
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
 
         debugProvider.reset()
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 
     @Test("Provider ofType Lookup")
@@ -186,39 +196,39 @@ struct EnhancementTests {
         #expect(notFound == nil)
     }
 
-    @Test("FeatureFlagLogger Logs Resolution")
-    func loggerLogsResolution() {
-        let logger = TestLogger()
-        service.setLogger(logger)
+    @Test("Resolution events name the resolving provider")
+    func resolutionEventNamesProvider() {
+        let sink = TestEventSink()
+        service.setEventSink(sink, options: .resolutions)
 
-        let localProvider = LocalProvider(flags: [TestFeature.booleanFeature.lookupKey: .bool(true)])
+        let localProvider = LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(true)])
         service.register(provider: localProvider, priority: .highest)
 
-        _ = service.isEnabled(TestFeature.booleanFeature)
+        _ = service.isEnabled(BoolTestFeature.booleanFeature)
 
-        #expect(logger.entries.count == 1)
-        #expect(logger.entries.first?.flag == TestFeature.booleanFeature.lookupKey)
-        #expect(logger.entries.first?.provider == "Local")
+        #expect(sink.resolutions.count == 1)
+        #expect(sink.resolutions.first?.flag == BoolTestFeature.booleanFeature.lookupKey)
+        #expect(sink.resolutions.first?.provider == "Local")
     }
 
-    @Test("FeatureFlagLogger Logs Default Fallback")
-    func loggerLogsDefaultFallback() {
-        let logger = TestLogger()
-        service.setLogger(logger)
+    @Test("Resolution events report a default fallback with no provider")
+    func resolutionEventDefaultFallback() {
+        let sink = TestEventSink()
+        service.setEventSink(sink, options: .resolutions)
 
-        _ = service.isEnabled(TestFeature.booleanFeature)
+        _ = service.isEnabled(BoolTestFeature.booleanFeature)
 
-        #expect(logger.entries.count == 1)
-        #expect(logger.entries.first?.provider == nil)
-        #expect(logger.entries.first?.flag == TestFeature.booleanFeature.lookupKey)
+        #expect(sink.resolutions.count == 1)
+        #expect(sink.resolutions.first?.provider == nil)
+        #expect(sink.resolutions.first?.flag == BoolTestFeature.booleanFeature.lookupKey)
     }
 
     @Test("LocalProvider enabledFeatures Initializer")
     func localProviderEnabledFeatures() {
-        let provider = LocalProvider(enabledFeatures: [TestFeature.booleanFeature])
+        let provider = LocalProvider(enabledFeatures: [BoolTestFeature.booleanFeature])
 
-        #expect(provider.value(for: TestFeature.booleanFeature.lookupKey) == .bool(true))
-        #expect(provider.value(for: TestFeature.stringFeature.lookupKey) == nil)
+        #expect(provider.value(for: BoolTestFeature.booleanFeature.lookupKey) == .bool(true))
+        #expect(provider.value(for: StringTestFeature.stringFeature.lookupKey) == nil)
     }
 }
 
@@ -262,8 +272,8 @@ final class MockAsyncProvider: AsyncFeatureFlagProvider, Sendable {
         try await Task.sleep(for: .milliseconds(10))
         lock.withLock { cache in
             cache.values = [
-                TestFeature.booleanFeature.lookupKey: .bool(true),
-                TestFeature.stringFeature.lookupKey: .string("async_value")
+                BoolTestFeature.booleanFeature.lookupKey: .bool(true),
+                StringTestFeature.stringFeature.lookupKey: .string("async_value")
             ]
         }
     }
@@ -280,55 +290,57 @@ struct AsyncProviderTests {
     }
 
     @Test("Async Provider Refresh")
-    func asyncProviderRefresh() async {
+    func asyncProviderRefresh() async throws {
         let asyncProvider = MockAsyncProvider()
         service.register(provider: asyncProvider, priority: .highest)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
 
-        let failures = await service.refresh()
-        #expect(failures == 0)
+        let report = try await service.refresh()
+        #expect(report.failures == 0)
+        #expect(report.isSuccess)
         #expect(asyncProvider.fetchCount == 1)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "async_value")
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
+        #expect(service.value(for: StringTestFeature.stringFeature) == "async_value")
     }
 
     @Test("Async Provider Refresh with Failure")
-    func asyncProviderRefreshFailure() async {
+    func asyncProviderRefreshFailure() async throws {
         let asyncProvider = MockAsyncProvider()
         asyncProvider.shouldFail = true
         service.register(provider: asyncProvider, priority: .highest)
 
-        let failures = await service.refresh()
-        #expect(failures == 1)
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        let report = try await service.refresh()
+        #expect(report.failures == 1)
+        #expect(report.outcomes.first?.providerName == "MockAsync")
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 
     @Test("Mixed Sync and Async Providers")
-    func mixedProviders() async {
+    func mixedProviders() async throws {
         let syncProvider = DebugProvider()
         let asyncProvider = MockAsyncProvider()
 
         service.register(provider: syncProvider, priority: .highest)
         service.register(provider: asyncProvider, priority: .custom(50))
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
 
-        await service.refresh()
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        try await service.refresh()
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
 
-        syncProvider.setOverride(for: TestFeature.booleanFeature, value: .bool(false))
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        syncProvider.setOverride(for: BoolTestFeature.booleanFeature, value: .bool(false))
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 }
 
 // Grouped feature flags for testing
-enum GroupedTestFeature: String, FeatureFlagKey, GroupedFeatureFlag {
+enum GroupedTestFeature: String, TypedFeatureFlag, GroupedFeatureFlag {
     case featureA = "featureA"
     case featureB = "featureB"
 
-    var defaultValue: FeatureFlagValue { .bool(false) }
+    var typedDefaultValue: Bool { false }
 
     static var group: FeatureFlagGroup {
         FeatureFlagGroup(prefix: "testgroup")
@@ -348,33 +360,33 @@ struct RolloutAndGroupTests {
     @Test("RolloutProvider 100% Rollout")
     func rollout100Percent() {
         let rollout = RolloutProvider(userId: "test-user")
-        rollout.setRollout(for: TestFeature.booleanFeature, percentage: 100)
+        rollout.setRollout(for: BoolTestFeature.booleanFeature, percentage: 100)
         service.register(provider: rollout, priority: .highest)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
     }
 
     @Test("RolloutProvider 0% Rollout blocks fallthrough")
     func rollout0Percent() {
         let rollout = RolloutProvider(userId: "test-user")
-        rollout.setRollout(for: TestFeature.booleanFeature, percentage: 0)
-        let local = LocalProvider(flags: [TestFeature.booleanFeature.lookupKey: .bool(true)])
+        rollout.setRollout(for: BoolTestFeature.booleanFeature, percentage: 0)
+        let local = LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(true)])
 
         service.register(provider: rollout, priority: .highest)
         service.register(provider: local, priority: .lowest)
 
         // 0% must return false and must NOT fall through to local true
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
-        #expect(rollout.value(for: TestFeature.booleanFeature.lookupKey) == .bool(false))
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
+        #expect(rollout.value(for: BoolTestFeature.booleanFeature.lookupKey) == .bool(false))
     }
 
     @Test("RolloutProvider Deterministic Hash")
     func rolloutDeterministic() {
         let rollout = RolloutProvider(userId: "deterministic-user-42")
-        rollout.setRollout(for: TestFeature.booleanFeature, percentage: 50)
+        rollout.setRollout(for: BoolTestFeature.booleanFeature, percentage: 50)
 
-        let result1 = rollout.value(for: TestFeature.booleanFeature.lookupKey)
-        let result2 = rollout.value(for: TestFeature.booleanFeature.lookupKey)
+        let result1 = rollout.value(for: BoolTestFeature.booleanFeature.lookupKey)
+        let result2 = rollout.value(for: BoolTestFeature.booleanFeature.lookupKey)
 
         #expect(result1 == result2)
     }
@@ -383,44 +395,47 @@ struct RolloutAndGroupTests {
     func rolloutStableAcrossInstances() {
         let a = RolloutProvider(userId: "stable-user")
         let b = RolloutProvider(userId: "stable-user")
-        a.setRollout(for: TestFeature.booleanFeature, percentage: 50)
-        b.setRollout(for: TestFeature.booleanFeature, percentage: 50)
+        a.setRollout(for: BoolTestFeature.booleanFeature, percentage: 50)
+        b.setRollout(for: BoolTestFeature.booleanFeature, percentage: 50)
 
         #expect(
-            a.value(for: TestFeature.booleanFeature.lookupKey)
-                == b.value(for: TestFeature.booleanFeature.lookupKey)
+            a.value(for: BoolTestFeature.booleanFeature.lookupKey)
+                == b.value(for: BoolTestFeature.booleanFeature.lookupKey)
         )
+    }
 
-        // Fixed FNV-1a vector: bucket for "vector-user:test_bool" must be stable.
-        let input = "vector-user:test_bool"
-        let bucket = Int(StableHash.fnv1a64(input) % 100)
-        #expect(bucket == Int(StableHash.fnv1a64(input) % 100))
-        #expect((0..<100).contains(bucket))
+    @Test("Rollout hash matches pinned FNV-1a vectors")
+    func rolloutHashVector() {
+        // Pinned vectors, not a self-comparison: this is the contract. Changing the hash
+        // re-buckets every user and silently shifts live rollouts, so it must be deliberate.
+        #expect(StableHash.fnv1a64("") == 14_695_981_039_346_656_037)
+        #expect(StableHash.fnv1a64("vector-user:test_bool") == 15_449_056_510_182_236_017)
+        #expect(StableHash.fnv1a64("demo-user-001:checkout.v2_flow") == 1_993_456_019_063_078_937)
     }
 
     @Test("RolloutProvider Custom Value")
     func rolloutCustomValue() {
         let rollout = RolloutProvider(userId: "custom-user")
         rollout.setRollout(
-            for: TestFeature.stringFeature,
+            for: StringTestFeature.stringFeature,
             percentage: 100,
             value: .string("rolled_out_url")
         )
         service.register(provider: rollout, priority: .highest)
 
-        #expect(service.stringValue(for: TestFeature.stringFeature) == "rolled_out_url")
+        #expect(service.value(for: StringTestFeature.stringFeature) == "rolled_out_url")
     }
 
     @Test("RolloutProvider Remove Rollout")
     func rolloutRemove() {
         let rollout = RolloutProvider(userId: "test-user")
-        rollout.setRollout(for: TestFeature.booleanFeature, percentage: 100)
+        rollout.setRollout(for: BoolTestFeature.booleanFeature, percentage: 100)
         service.register(provider: rollout, priority: .highest)
 
-        #expect(service.isEnabled(TestFeature.booleanFeature) == true)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
 
-        rollout.removeRollout(for: TestFeature.booleanFeature)
-        #expect(service.isEnabled(TestFeature.booleanFeature) == false)
+        rollout.removeRollout(for: BoolTestFeature.booleanFeature)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 
     @Test("FeatureFlagGroup Qualified Key")
@@ -483,41 +498,44 @@ struct ResolverSnapshotTests {
     func snapshotMatchesValues() {
         let resolver = FeatureFlagResolver()
         let local = LocalProvider(flags: [
-            TestFeature.booleanFeature.lookupKey: .bool(true),
-            TestFeature.stringFeature.lookupKey: .string("from-local"),
-            TestFeature.intFeature.lookupKey: .int(7)
+            BoolTestFeature.booleanFeature.lookupKey: .bool(true),
+            StringTestFeature.stringFeature.lookupKey: .string("from-local"),
+            IntTestFeature.intFeature.lookupKey: .int(7)
         ])
         resolver.register(provider: local, priority: .highest)
 
-        let snapshot = resolver.snapshot(for: [
-            TestFeature.booleanFeature,
-            TestFeature.stringFeature,
-            TestFeature.intFeature
-        ])
+        // A snapshot is built per key type: `snapshot(for:)` takes one homogeneous key sequence.
+        let boolSnapshot = resolver.snapshot(for: [BoolTestFeature.booleanFeature])
+        let stringSnapshot = resolver.snapshot(for: [StringTestFeature.stringFeature])
+        let intSnapshot = resolver.snapshot(for: [IntTestFeature.intFeature])
 
-        #expect(snapshot.isEnabled(TestFeature.booleanFeature) == true)
-        #expect(snapshot.string(for: TestFeature.stringFeature.lookupKey) == "from-local")
-        #expect(snapshot.int(for: TestFeature.intFeature.lookupKey) == 7)
+        #expect(boolSnapshot.isEnabled(BoolTestFeature.booleanFeature) == true)
+        #expect(stringSnapshot.string(for: StringTestFeature.stringFeature.lookupKey) == "from-local")
+        #expect(intSnapshot.int(for: IntTestFeature.intFeature.lookupKey) == 7)
 
-        #expect(resolver.value(for: TestFeature.booleanFeature) == .bool(true))
-        #expect(resolver.value(for: TestFeature.stringFeature) == .string("from-local"))
-        #expect(resolver.value(for: TestFeature.intFeature) == .int(7))
+        // Typed reads unwrap to the declared type, so no `.bool(...)` matching is needed.
+        #expect(resolver.value(for: BoolTestFeature.booleanFeature) == true)
+        #expect(resolver.value(for: StringTestFeature.stringFeature) == "from-local")
+        #expect(resolver.value(for: IntTestFeature.intFeature) == 7)
+        #expect(resolver.rawValue(for: BoolTestFeature.booleanFeature) == .bool(true))
     }
 
     @Test("Resolver refresh updates snapshot")
-    func resolverRefresh() async {
+    func resolverRefresh() async throws {
         let resolver = FeatureFlagResolver()
         let asyncProvider = MockAsyncProvider()
         resolver.register(provider: asyncProvider, priority: .highest)
 
-        #expect(resolver.isEnabled(TestFeature.booleanFeature) == false)
+        #expect(resolver.isEnabled(BoolTestFeature.booleanFeature) == false)
 
-        let failures = await resolver.refresh()
-        #expect(failures == 0)
+        let report = try await resolver.refresh()
+        #expect(report.failures == 0)
 
-        let snapshot = resolver.snapshot(for: [TestFeature.booleanFeature, TestFeature.stringFeature])
-        #expect(snapshot.isEnabled(TestFeature.booleanFeature) == true)
-        #expect(snapshot.string(for: TestFeature.stringFeature.lookupKey) == "async_value")
+        let snapshot = resolver.snapshot(for: [BoolTestFeature.booleanFeature])
+        #expect(snapshot.isEnabled(BoolTestFeature.booleanFeature) == true)
+
+        let stringSnapshot = resolver.snapshot(for: [StringTestFeature.stringFeature])
+        #expect(stringSnapshot.string(for: StringTestFeature.stringFeature.lookupKey) == "async_value")
     }
 
     @Test("FeatureFlagSnapshot Codable round-trip")
@@ -531,5 +549,53 @@ struct ResolverSnapshotTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(FeatureFlagSnapshot.self, from: data)
         #expect(decoded == original)
+    }
+}
+
+@MainActor
+@Suite("Resolution contract")
+struct ResolutionContractTests {
+
+    private func makeService(_ values: [Bool], priority: FeatureFlagPriority) -> FeatureFlagService {
+        let service = FeatureFlagService()
+        for value in values {
+            service.register(
+                provider: LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(value)]),
+                priority: priority
+            )
+        }
+        return service
+    }
+
+    @Test("Equal .highest priorities: the first registered provider wins")
+    func equalHighestPriorityFirstWins() {
+        let service = makeService([true, false], priority: .highest)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
+    }
+
+    @Test("Equal .custom priorities: the first registered provider wins")
+    func equalCustomPriorityFirstWins() {
+        let service = makeService([true, false], priority: .custom(50))
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
+    }
+
+    @Test("Equal .lowest priorities: the first registered provider wins")
+    func equalLowestPriorityFirstWins() {
+        let service = makeService([true, false], priority: .lowest)
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == true)
+    }
+
+    @Test("Registration order never overrides priority")
+    func priorityBeatsRegistrationOrder() {
+        let service = FeatureFlagService()
+        service.register(
+            provider: LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(true)]),
+            priority: .lowest
+        )
+        service.register(
+            provider: LocalProvider(flags: [BoolTestFeature.booleanFeature.lookupKey: .bool(false)]),
+            priority: .custom(10)
+        )
+        #expect(service.isEnabled(BoolTestFeature.booleanFeature) == false)
     }
 }
