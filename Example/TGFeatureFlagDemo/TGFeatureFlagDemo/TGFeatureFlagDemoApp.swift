@@ -1,27 +1,13 @@
 import SwiftUI
 import TGFeatureFlag
 
-enum DemoFeature: String, FeatureFlagKey, CaseIterable {
+/// Boolean switches. One value type per enum, so string configuration lives in `DemoConfig`.
+enum DemoFeature: String, TypedFeatureFlag, CaseIterable {
     case newHomeDesign = "feature_new_home"
     case socialTab = "feature_social_tab"
     case experimentalCheckout = "feature_checkout_v2"
-    case apiBaseURL = "config_api_base_url"
-    case welcomeMessage = "config_welcome_message"
 
-    var defaultValue: FeatureFlagValue {
-        switch self {
-        case .newHomeDesign:
-            return .bool(false)
-        case .socialTab:
-            return .bool(false)
-        case .experimentalCheckout:
-            return .bool(false)
-        case .apiBaseURL:
-            return .string("https://api.production.example")
-        case .welcomeMessage:
-            return .string("Feature flags are currently using local defaults.")
-        }
-    }
+    var typedDefaultValue: Bool { false }
 
     var description: String {
         switch self {
@@ -31,6 +17,26 @@ enum DemoFeature: String, FeatureFlagKey, CaseIterable {
             return "Social Tab"
         case .experimentalCheckout:
             return "Experimental Checkout"
+        }
+    }
+}
+
+/// String configuration values.
+enum DemoConfig: String, TypedFeatureFlag, CaseIterable {
+    case apiBaseURL = "config_api_base_url"
+    case welcomeMessage = "config_welcome_message"
+
+    var typedDefaultValue: String {
+        switch self {
+        case .apiBaseURL:
+            return "https://api.production.example"
+        case .welcomeMessage:
+            return "Feature flags are currently using local defaults."
+        }
+    }
+
+    var description: String {
+        switch self {
         case .apiBaseURL:
             return "API Base URL"
         case .welcomeMessage:
@@ -39,12 +45,12 @@ enum DemoFeature: String, FeatureFlagKey, CaseIterable {
     }
 }
 
-enum CheckoutFeature: String, FeatureFlagKey, GroupedFeatureFlag, CaseIterable {
+enum CheckoutFeature: String, TypedFeatureFlag, GroupedFeatureFlag, CaseIterable {
     case v2Flow = "v2_flow"
     case newPayment = "new_payment"
     case expressShipping = "express_shipping"
 
-    var defaultValue: FeatureFlagValue { .bool(false) }
+    var typedDefaultValue: Bool { false }
 
     var description: String {
         switch self {
@@ -76,7 +82,7 @@ struct TGFeatureFlagDemoApp: App {
 
 private extension TGFeatureFlagDemoApp {
     static func makeService() -> FeatureFlagService {
-        let service = FeatureFlagService()
+        let service = FeatureFlagService(observeUserDefaults: true)
 
         let debugProvider = DebugProvider()
         service.register(provider: debugProvider, priority: .highest)
@@ -94,8 +100,8 @@ private extension TGFeatureFlagDemoApp {
             flags: [
                 DemoFeature.newHomeDesign.lookupKey: .bool(true),
                 DemoFeature.experimentalCheckout.lookupKey: .bool(false),
-                DemoFeature.apiBaseURL.lookupKey: .string("https://api.local.example"),
-                DemoFeature.welcomeMessage.lookupKey: .string(
+                DemoConfig.apiBaseURL.lookupKey: .string("https://api.local.example"),
+                DemoConfig.welcomeMessage.lookupKey: .string(
                     "Local provider is active until remote config refreshes."
                 )
             ]
