@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-02
+
 ### Added
 - **`Double` flags accept an integer payload.** `JSONDecoder` erases the decimal point, so a backend writing `{"value": 1}` for a ratio produced `.int(1)`, which failed the typed read and silently ran the flag on its shipped default — indistinguishable from a flag that was switched off. The read now widens the integer, and reports a new `valueWidened` event so the shape of the payload is still visible. Widening is one-directional and `Double`-only: an `Int` flag still rejects `1.5` (truncating it would be a lossy read), and `1` is still not `true`.
 - **Bare-literal decoding is pinned by tests**, including the two places where a hand-written payload does not survive the round trip: `1.0` and `1e3` decode as integers (`JSONDecoder` erases the decimal point), and integers beyond `Int.max` fall back to a double. The first of those is now handled by the `Double` widening above; the second still rounds, so keep integral configuration values inside `Int` range.
@@ -153,6 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed generic parameter inference issues in SwiftUI views.
 - Fixed layout occlusion issues in Product Detail page when navigation bar is hidden.
 
+[1.1.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/1.0.0
 [0.5.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/0.0.1...0.5.0
 [0.0.1]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/0.0.1

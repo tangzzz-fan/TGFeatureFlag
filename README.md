@@ -44,7 +44,7 @@ Reducer projects → Views read Store (not Environment Service)
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "1.0.0")
+    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "1.1.0")
 ]
 ```
 
@@ -79,6 +79,12 @@ Two things need a decision rather than a rename:
 - **Re-save cached snapshots.** Files written by 0.5.0 use the `{"bool":{"_0":true}}` shape and no longer decode. `LastKnownGoodStore.load()` returns `nil` for them, so the app falls back to defaults and rewrites the cache after the next successful refresh. Nothing crashes; the first launch after upgrading just loses the cold-start optimisation once.
 
 `FeatureFlagService` no longer registers a `UserDefaults` observer unless asked, and `refresh()` now throws `CancellationError` when the caller is cancelled — provider failures still come back in the report rather than as throws.
+
+## Migrating from 1.0.0
+
+1.1.0 is additive apart from one enum case. `FeatureFlagEvent` gained `.valueWidened`, so an exhaustive `switch` over it needs a branch (or a `default`) when you rebuild. It shares the `.typeMismatches` option, so nothing has to be reconfigured to receive it.
+
+Behaviour change worth knowing: a `Double` flag that receives an integer (`{"value": 1}`) now resolves to `1.0` instead of falling back to its shipped default. Anything that asserted on the old fallback — a test, or a dashboard counting `typeMismatch` events — will see the difference.
 
 ## Continuous Integration
 
