@@ -336,9 +336,9 @@ resolver.setEventSink(MySink())                       // .standard: exposures, r
 resolver.setEventSink(MySink(), options: .all)        // adds a per-read .resolved event
 ```
 
-Exposures are deduplicated per flag and value, so a view that reads a flag on every frame still reports one exposure. Call `startNewSession()` at a session boundary to report them again.
+Exposures are deduplicated per flag and value, so a view that reads a flag on every frame still reports one exposure. Type mismatches are deduplicated per flag, expected type and offending value: a flag stays misconfigured for the whole session, so re-reporting it on every read would flood the sink without adding information. Call `startNewSession()` at a session boundary to report both again.
 
-`.resolutions` is excluded from `.standard` on purpose: it fires on every read. Everything else is cheap enough to leave on in production.
+`.resolutions` is excluded from `.standard` on purpose: it fires on every read. The other two read-path events are deduplicated, so `.standard` is safe to leave on in production.
 
 ## Resolution order
 

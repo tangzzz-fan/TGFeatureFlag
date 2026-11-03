@@ -80,18 +80,17 @@ public struct FeatureFlagEventOptions: OptionSet, Sendable {
     public static let all: FeatureFlagEventOptions = [.exposures, .resolutions, .refresh, .typeMismatches]
 }
 
-/// Remembers which flag/value pairs have already been reported this session.
-final class FeatureFlagExposureLog: Sendable {
-    private struct Key: Hashable, Sendable {
-        let flag: String
-        let value: FeatureFlagValue
-    }
-
+/// Remembers which values have already been reported in this session.
+///
+/// Used for both exposures and type mismatches. Both are read-path events, so without
+/// deduplication a flag read inside a SwiftUI body reports once per frame — thousands of
+/// times a session — and the data is useless for analysis.
+final class FeatureFlagOnceLog<Key: Hashable & Sendable>: Sendable {
     private let seen = OSAllocatedUnfairLock(initialState: Set<Key>())
 
-    /// - Returns: `true` the first time a pair is seen.
-    func record(flag: String, value: FeatureFlagValue) -> Bool {
-        seen.withLock { $0.insert(Key(flag: flag, value: value)).inserted }
+    /// - Returns: `true` the first time a key is seen.
+    func record(_ key: Key) -> Bool {
+        seen.withLock { $0.insert(key).inserted }
     }
 
     func reset() {
@@ -104,9 +103,22 @@ final class FeatureFlagExposureLog: Sendable {
 /// Optional everywhere so that a resolver with no sink pays nothing: no allocation, no branch on
 /// the hot path beyond a single nil check.
 struct FeatureFlagEventEmitter: Sendable {
+    private struct ExposureKey: Hashable, Sendable {
+        let flag: String
+        let value: FeatureFlagValue
+    }
+
+    private struct MismatchKey: Hashable, Sendable {
+        let flag: String
+        let expected: String
+        let actual: FeatureFlagValue
+    }
+
     let sink: any FeatureFlagEventSink
     let options: FeatureFlagEventOptions
-    let exposures = FeatureFlagExposureLog()
+
+    private let exposures = FeatureFlagOnceLog<ExposureKey>()
+    private let mismatches = FeatureFlagOnceLog<MismatchKey>()
 
     func resolved(flag: String, provider: String?, value: FeatureFlagValue) {
         guard options.contains(.resolutions) else { return }
@@ -115,12 +127,19 @@ struct FeatureFlagEventEmitter: Sendable {
 
     func exposure(flag: String, value: FeatureFlagValue) {
         guard options.contains(.exposures) else { return }
-        guard exposures.record(flag: flag, value: value) else { return }
+        guard exposures.record(ExposureKey(flag: flag, value: value)) else { return }
         sink.receive(.exposure(flag: flag, value: value))
     }
 
+    /// Reports a value whose case does not match the key's declared type.
+    ///
+    /// Deduplicated per flag, expected type and actual value: a misconfigured flag stays
+    /// misconfigured for the whole session, so re-reporting it on every read would drown the
+    /// sink without adding information. A change in the offending value does report again.
     func typeMismatch(flag: String, expected: String, actual: FeatureFlagValue) {
         guard options.contains(.typeMismatches) else { return }
+        let key = MismatchKey(flag: flag, expected: expected, actual: actual)
+        guard mismatches.record(key) else { return }
         sink.receive(.typeMismatch(flag: flag, expected: expected, actual: actual))
     }
 
@@ -146,5 +165,6 @@ struct FeatureFlagEventEmitter: Sendable {
 
     func startNewSession() {
         exposures.reset()
+        mismatches.reset()
     }
 }

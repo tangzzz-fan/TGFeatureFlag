@@ -99,6 +99,35 @@ struct FeatureFlagEventTests {
         #expect(mismatches.first?.2 == .string("oops"))
     }
 
+    @Test("Reading a misconfigured flag repeatedly reports one mismatch")
+    func typeMismatchIsDeduplicated() {
+        let sink = TestEventSink()
+        let resolver = FeatureFlagResolver()
+        resolver.setEventSink(sink)
+        let debug = DebugProvider()
+        resolver.register(provider: debug, priority: .highest)
+        debug.setOverride(for: BoolTestFeature.booleanFeature, value: .string("oops"))
+
+        func mismatchCount() -> Int {
+            sink.events.filter { event in
+                if case .typeMismatch = event { return true }
+                return false
+            }.count
+        }
+
+        // A misconfigured flag stays misconfigured; re-reporting it on every body evaluation
+        // would flood the sink without adding information.
+        for _ in 0..<50 {
+            _ = resolver.isEnabled(BoolTestFeature.booleanFeature)
+        }
+        #expect(mismatchCount() == 1)
+
+        // A different offending value is a different problem, so it reports again.
+        debug.setOverride(for: BoolTestFeature.booleanFeature, value: .string("still oops"))
+        _ = resolver.isEnabled(BoolTestFeature.booleanFeature)
+        #expect(mismatchCount() == 2)
+    }
+
     @Test("Refresh outcomes are typed events, not values smuggled through a flag field")
     func refreshEvents() async throws {
         let sink = TestEventSink()
