@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-03
+
 ### Fixed
 - **Type-mismatch and widening events are deduplicated.** Both are read-path events, so a misconfigured flag read inside a SwiftUI body reported on every render: one bad remote value produced 381 `typeMismatch` events in five seconds in the example app. They are now deduplicated per flag, expected type and offending value, on the same session boundary as exposures. A *different* offending value is a different problem and still reports, so no signal is lost — only the repetition. This also makes `.standard` safe to leave on in production, which is what its option set already claimed: it excludes `.resolutions` precisely because per-read events are too noisy, yet shipped two other per-read events by default.
 
@@ -158,6 +160,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed generic parameter inference issues in SwiftUI views.
 - Fixed layout occlusion issues in Product Detail page when navigation bar is hidden.
 
+[1.1.1]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/tangzzz-fan/TGFeatureFlag/releases/tag/1.0.0
 [0.5.0]: https://github.com/tangzzz-fan/TGFeatureFlag/compare/0.0.1...0.5.0

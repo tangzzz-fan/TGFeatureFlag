@@ -53,7 +53,7 @@ xcodebuild -scheme TGFeatureFlagDemo -destination 'generic/platform=iOS Simulato
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "1.1.0")
+    .package(url: "https://github.com/tangzzz-fan/TGFeatureFlag.git", from: "1.1.1")
 ]
 ```
 
@@ -94,6 +94,14 @@ Two things need a decision rather than a rename:
 1.1.0 is additive apart from one enum case. `FeatureFlagEvent` gained `.valueWidened`, so an exhaustive `switch` over it needs a branch (or a `default`) when you rebuild. It shares the `.typeMismatches` option, so nothing has to be reconfigured to receive it.
 
 Behaviour change worth knowing: a `Double` flag that receives an integer (`{"value": 1}`) now resolves to `1.0` instead of falling back to its shipped default. Anything that asserted on the old fallback — a test, or a dashboard counting `typeMismatch` events — will see the difference.
+
+## Migrating from 1.1.0
+
+1.1.1 changes no API. There is nothing to recompile for.
+
+It does change how often two events are emitted. `typeMismatch` and `valueWidened` are read-path events — a flag read inside a `SwiftUI` body resolves on every render — and neither was deduplicated, so a single misconfigured flag could emit thousands of events per session. Both are now deduplicated per flag, expected type and offending value, on the same session boundary as exposures.
+
+If you count those events, expect the count to drop to roughly one per distinct problem instead of one per read. That is the fix, not a regression: `.standard` is documented as safe to leave on in production, which it was not while a bad remote value could flood the sink. A *different* offending value still reports, so nothing is lost except the repetition. `startNewSession()` resets the dedupe, same as for exposures.
 
 ## Continuous Integration
 
