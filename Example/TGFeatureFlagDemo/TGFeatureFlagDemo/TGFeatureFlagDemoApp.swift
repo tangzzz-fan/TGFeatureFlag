@@ -2,10 +2,17 @@ import SwiftUI
 import TGFeatureFlag
 
 /// Boolean switches. One value type per enum, so string configuration lives in `DemoConfig`.
+///
+/// The value type is part of the key, which is what makes `isEnabled` reject a string flag at
+/// compile time instead of silently falling back to the default.
 enum DemoFeature: String, TypedFeatureFlag, CaseIterable {
     case newHomeDesign = "feature_new_home"
     case socialTab = "feature_social_tab"
     case experimentalCheckout = "feature_checkout_v2"
+
+    /// Deliberately misconfigured in `LocalProvider`: a Bool key whose provider returns a
+    /// string. Reading it emits a `.typeMismatch` event and falls back to the default.
+    case typeMismatchDemo = "feature_type_mismatch_demo"
 
     var typedDefaultValue: Bool { false }
 
@@ -17,6 +24,8 @@ enum DemoFeature: String, TypedFeatureFlag, CaseIterable {
             return "Social Tab"
         case .experimentalCheckout:
             return "Experimental Checkout"
+        case .typeMismatchDemo:
+            return "Type Mismatch Demo"
         }
     }
 }
@@ -45,6 +54,7 @@ enum DemoConfig: String, TypedFeatureFlag, CaseIterable {
     }
 }
 
+/// Grouped keys get a `checkout.` prefix, which is also the key the rollout document uses.
 enum CheckoutFeature: String, TypedFeatureFlag, GroupedFeatureFlag, CaseIterable {
     case v2Flow = "v2_flow"
     case newPayment = "new_payment"
@@ -70,12 +80,12 @@ enum CheckoutFeature: String, TypedFeatureFlag, GroupedFeatureFlag, CaseIterable
 
 @main
 struct TGFeatureFlagDemoApp: App {
-    @State private var service = TGFeatureFlagDemoApp.makeService()
+    @State private var wiring = DemoWiring()
 
     var body: some Scene {
         WindowGroup {
             root
-                .featureFlagService(service)
+                .featureFlagService(wiring.service)
         }
     }
 
@@ -90,39 +100,7 @@ struct TGFeatureFlagDemoApp: App {
                 FeatureFlagDebugView<DemoFeature>()
             }
         } else {
-            ContentView()
+            ContentView(wiring: wiring)
         }
-    }
-}
-
-private extension TGFeatureFlagDemoApp {
-    static func makeService() -> FeatureFlagService {
-        let service = FeatureFlagService(observeUserDefaults: true)
-
-        let debugProvider = DebugProvider()
-        service.register(provider: debugProvider, priority: .highest)
-
-        let rolloutProvider = RolloutProvider(userId: "demo-user-001")
-        rolloutProvider.setRollout(for: CheckoutFeature.v2Flow, percentage: 75)
-        rolloutProvider.setRollout(for: CheckoutFeature.newPayment, percentage: 40)
-        rolloutProvider.setRollout(for: CheckoutFeature.expressShipping, percentage: 100)
-        service.register(provider: rolloutProvider, priority: .custom(80))
-
-        service.register(provider: MockRemoteProvider(), priority: .custom(60))
-        service.register(provider: UserDefaultsProvider(), priority: .custom(40))
-
-        let localProvider = LocalProvider(
-            flags: [
-                DemoFeature.newHomeDesign.lookupKey: .bool(true),
-                DemoFeature.experimentalCheckout.lookupKey: .bool(false),
-                DemoConfig.apiBaseURL.lookupKey: .string("https://api.local.example"),
-                DemoConfig.welcomeMessage.lookupKey: .string(
-                    "Local provider is active until remote config refreshes."
-                )
-            ]
-        )
-        service.register(provider: localProvider, priority: .lowest)
-
-        return service
     }
 }

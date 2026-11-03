@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Type-mismatch and widening events are deduplicated.** Both are read-path events, so a misconfigured flag read inside a SwiftUI body reported on every render: one bad remote value produced 381 `typeMismatch` events in five seconds in the example app. They are now deduplicated per flag, expected type and offending value, on the same session boundary as exposures. A *different* offending value is a different problem and still reports, so no signal is lost — only the repetition. This also makes `.standard` safe to leave on in production, which is what its option set already claimed: it excludes `.resolutions` precisely because per-read events are too noisy, yet shipped two other per-read events by default.
+
 ## [1.1.0] - 2026-11-02
 
 ### Added
@@ -23,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`FeatureFlagDebugView` works in both modes.** Pass `snapshot:` with `onOverride:` to use it in Redux / Store-as-SoT apps — the explicit snapshot wins over the environment service, the same precedence `FeatureGate` applies, and edits reach the app as `(lookupKey, value)` calls (`nil` clears an override) instead of assuming a `DebugProvider`. The service-driven `init()` is unchanged. With neither source the screen explains the mistake instead of trapping. Row display rules live in a testable model; rows show a visible warning when a stored value's type does not match the key's declared type, and every editor gained a per-flag reset button.
 - **`TypedFeatureFlag`**: keys carry their value type, so `value(for:)` returns `Bool` / `String` / `Int` / `Double` directly and `isEnabled` only compiles for `Bool` keys. Reading a string flag as a boolean is now a compile error instead of a silent fallback. `rawValue(for:)` remains as the untyped escape hatch for tooling.
 - **`RemoteRolloutProvider`** and **`RolloutConfiguration`**: rollout percentages come from a backend document, so moving a rollout from 5% to 50% no longer needs a release. The document accepts bare JSON literals; malformed entries are skipped and reported in `ignoredKeys` instead of failing the whole payload.
-- **`FeatureFlagEvent`** / **`FeatureFlagEventSink`** / `FeatureFlagEventOptions`: typed events for resolution, exposure, type mismatch and refresh outcomes, replacing `FeatureFlagLogger`. Exposure events are deduplicated per flag and value, and type-mismatch events per flag, expected type and offending value — both are read-path events, so neither can flood the sink. `startNewSession()` begins a new reporting session.
+- **`FeatureFlagEvent`** / **`FeatureFlagEventSink`** / `FeatureFlagEventOptions`: typed events for resolution, exposure, type mismatch and refresh outcomes, replacing `FeatureFlagLogger`. Exposure events are deduplicated per flag and value, with `startNewSession()` to begin a new reporting session.
 - **`LastKnownGoodStore`** and **`CachedSnapshotProvider`**: persist the last successfully refreshed snapshot and prime the provider chain from disk at launch, so a cold start renders the values the app actually had last session instead of shipped defaults. `load()` never throws — a missing or corrupt file returns `nil` and the app falls back to defaults.
 - **`FeatureFlagChangePublishing`**, **`FeatureFlagChangeBroadcaster`** and `FeatureFlagChangeObservation`: a fan-out change-notification mechanism providers can adopt. Fan-out rather than `AsyncStream`, which is single-consumer and would make two resolvers compete for elements.
 - **`FeatureFlagRefreshReport`**: per-provider refresh outcome and duration.

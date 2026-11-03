@@ -71,6 +71,9 @@ public struct FeatureFlagEventOptions: OptionSet, Sendable {
     /// A provider returned a value whose case does not match the key's declared type.
     ///
     /// Includes the values it accepted anyway by widening an integer to a `Double`.
+    ///
+    /// Both are read-path events, so both are deduplicated per flag, expected type and
+    /// offending value — see `typeMismatch(flag:expected:actual:)`.
     public static let typeMismatches = FeatureFlagEventOptions(rawValue: 1 << 3)
 
     /// Exposures, refresh outcomes and type mismatches.
@@ -143,8 +146,15 @@ struct FeatureFlagEventEmitter: Sendable {
         sink.receive(.typeMismatch(flag: flag, expected: expected, actual: actual))
     }
 
+    /// Reports a value that was accepted by widening, e.g. an integer payload read as a
+    /// `Double`.
+    ///
+    /// Shares the mismatch log: for a given flag and value a resolution either widens or
+    /// mismatches, never both, so one dedupe set covers both events.
     func valueWidened(flag: String, expected: String, actual: FeatureFlagValue) {
         guard options.contains(.typeMismatches) else { return }
+        let key = MismatchKey(flag: flag, expected: expected, actual: actual)
+        guard mismatches.record(key) else { return }
         sink.receive(.valueWidened(flag: flag, expected: expected, actual: actual))
     }
 

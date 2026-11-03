@@ -25,6 +25,15 @@ Resolver.snapshot(for:) → App Adapter → dispatch(.loaded)
 Reducer projects → Views read Store (not Environment Service)
 ```
 
+## Example app
+
+`Example/TGFeatureFlagDemo` is a runnable SwiftUI app that exercises the whole surface: typed keys, a seven-provider chain with explicit priorities, remote rollouts with an "ops console", cold start primed from the last-known-good cache, the per-provider refresh report, the event log with exposure deduplication, snapshot mode, and the debug override view.
+
+```sh
+cd Example/TGFeatureFlagDemo
+xcodebuild -scheme TGFeatureFlagDemo -destination 'generic/platform=iOS Simulator' build
+```
+
 ## Features
 
 - **Typed values**: `FeatureFlagValue` (`bool` / `string` / `int` / `double`) — no `Any`, no resolution `fatalError`.
@@ -336,7 +345,7 @@ resolver.setEventSink(MySink())                       // .standard: exposures, r
 resolver.setEventSink(MySink(), options: .all)        // adds a per-read .resolved event
 ```
 
-Exposures are deduplicated per flag and value, so a view that reads a flag on every frame still reports one exposure. Type mismatches are deduplicated per flag, expected type and offending value: a flag stays misconfigured for the whole session, so re-reporting it on every read would flood the sink without adding information. Call `startNewSession()` at a session boundary to report both again.
+Exposures are deduplicated per flag and value, so a view that reads a flag on every frame still reports one exposure. Type mismatches and widenings are deduplicated per flag, expected type and offending value: a flag stays misconfigured for the whole session, so re-reporting it on every read would flood the sink without adding information. Call `startNewSession()` at a session boundary to report them again.
 
 `.resolutions` is excluded from `.standard` on purpose: it fires on every read. The other two read-path events are deduplicated, so `.standard` is safe to leave on in production.
 

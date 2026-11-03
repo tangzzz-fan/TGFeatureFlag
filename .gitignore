@@ -17,3 +17,8 @@ docs/
 
 # coverage report written by CI and by local `llvm-cov export`
 coverage.json
+
+# Xcode per-project build products and module cache
+/build/
+Example/TGFeatureFlagDemo/build/
+**/-Xcc/
